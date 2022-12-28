@@ -30,6 +30,45 @@ $response = $post->shareToFacebook();
 echo $response->getPostId(); // 123456789101112
 ```
 
+## Table of Contents
+
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
++ [Facebook](#facebook)
+    - [Initialization](#initialization)
+    - [Available Methods to set Options for sharePost() method](#available-methods-to-set-options-for-sharepost---method)
+    - [uploadPhoto(), deletePhoto(), uploadVideo(), deleteVideo()](#uploadphoto----deletephoto----uploadvideo----deletevideo--)
+    - [getPosts()](#getposts--)
+    - [getTaggedPosts()](#gettaggedposts--)
+    - [getPost()](#getpost--)
+    - [deletePost()](#deletepost--)
+    - [getComments()](#getcomments--)
+    - [getUrl()](#geturl--)
++ [Twitter](#twitter)
+    - [Initialization](#initialization-1)
+    - [tweet()](#tweet--)
+    - [available methods to set options for a tweet](#available-methods-to-set-options-for-a-tweet)
+    - [uploadMedia(), getMediaIds()](#uploadmedia----getmediaids--)
+    - [addMedia()](#addmedia--)
+    - [deleteTweet()](#deletetweet--)
++ [Instagram](#instagram)
+    - [Initialization](#initialization-2)
+    - [publishImage()](#publishimage--)
+    - [publishImageCarousel()](#publishimagecarousel--)
+    - [addComment()](#addcomment--)
+    - [getUrl()](#geturl---1)
+    - [getPost()](#getpost---1)
++ [Traits](#traits)
+    - [Socializer](#socializer)
+    - [shareToFacebook(), shareToTwitter(), shareToInstagram(), shareToAll()](#sharetofacebook----sharetotwitter----sharetoinstagram----sharetoall--)
+- [Changelog](#changelog)
+- [Contributing](#contributing)
+- [Security Vulnerabilities](#security-vulnerabilities)
+- [Credits](#credits)
+- [License](#license)
+
+
 ## Installation
 
 You can install the package via composer:
