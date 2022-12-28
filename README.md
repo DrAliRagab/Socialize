@@ -3,7 +3,6 @@
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/draliragab/socialize.svg?style=flat-square)](https://packagist.org/packages/draliragab/socialize)
 [![License](https://img.shields.io/github/license/draliragab/socialize?style=flat-square)](https://github.com/DrAliRagab/Socialize/blob/master/LICENSE.md)
 
-
 **Socialize** is a package that helps you to add social media features to your Laravel project easily.
 
 You can share posts to **Facebook**, **Twitter**, **Instagram** and more is coming soon.
@@ -34,39 +33,39 @@ echo $response->getPostId(); // 123456789101112
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Usage](#usage)
-    + [Facebook](#facebook)
-        - [Initialization](#initialization)
-        - [Available Methods to set Options for sharePost() method](#available-methods-to-set-options-for-sharepost-method)
-        - [uploadPhoto(), deletePhoto(), uploadVideo(), deleteVideo()](#uploadphoto-deletephoto-uploadvideo-deletevideo)
-        - [getPosts()](#getposts)
-        - [getTaggedPosts()](#gettaggedposts)
-        - [getPost()](#getpost)
-        - [deletePost()](#deletepost)
-        - [getComments()](#getcomments)
-        - [getUrl()](#geturl)
-    + [Twitter](#twitter)
-        - [Initialization](#initialization-1)
-        - [tweet()](#tweet)
-        - [available methods to set options for a tweet](#available-methods-to-set-options-for-a-tweet)
-        - [uploadMedia(), getMediaIds()](#uploadmedia-getmediaids)
-        - [addMedia()](#addmedia)
-        - [deleteTweet()](#deletetweet)
-    + [Instagram](#instagram)
-        - [Initialization](#initialization-2)
-        - [publishImage()](#publishimage)
-        - [publishImageCarousel()](#publishimagecarousel)
-        - [addComment()](#addcomment)
-        - [getUrl()](#geturl-1)
-        - [getPost()](#getpost-1)
-    + [Traits](#traits)
-        - [Socializer](#socializer)
-        - [shareToFacebook(), shareToTwitter(), shareToInstagram()](#sharetofacebook-sharetotwitter-sharetoinstagram)
+  - [Facebook](#facebook)
+    - [Initialization](#initialization)
+    - [Available Methods to set Options for sharePost() method](#available-methods-to-set-options-for-sharepost-method)
+    - [uploadPhoto(), deletePhoto(), uploadVideo(), deleteVideo()](#uploadphoto-deletephoto-uploadvideo-deletevideo)
+    - [getPosts()](#getposts)
+    - [getTaggedPosts()](#gettaggedposts)
+    - [getPost()](#getpost)
+    - [deletePost()](#deletepost)
+    - [getComments()](#getcomments)
+    - [getUrl()](#geturl)
+  - [Twitter](#twitter)
+    - [Initialization](#initialization-1)
+    - [tweet()](#tweet)
+    - [available methods to set options for a tweet](#available-methods-to-set-options-for-a-tweet)
+    - [addComment()](#addcomment)
+    - [uploadMedia(), getMediaIds()](#uploadmedia-getmediaids)
+    - [addMedia()](#addmedia)
+    - [deleteTweet()](#deletetweet)
+  - [Instagram](#instagram)
+    - [Initialization](#initialization-2)
+    - [publishImage()](#publishimage)
+    - [publishImageCarousel()](#publishimagecarousel)
+    - [addComment()](#addcomment)
+    - [getUrl()](#geturl-1)
+    - [getPost()](#getpost-1)
+  - [Traits](#traits)
+    - [Socializer](#socializer)
+    - [shareToFacebook(), shareToTwitter(), shareToInstagram()](#sharetofacebook-sharetotwitter-sharetoinstagram)
 - [Changelog](#changelog)
 - [Contributing](#contributing)
 - [Security Vulnerabilities](#security-vulnerabilities)
 - [Credits](#credits)
 - [License](#license)
-
 
 ## Installation
 
@@ -386,6 +385,17 @@ $postId = $twitter
         text: 'https://example.com/',
     )->getPostId();
 
+```
+
+#### addComment()
+
+Add a comment to a tweet.
+
+```php
+$postId = $twitter
+    ->tweet('Awesome tweet')
+    ->addComment('Awesome comment')
+    ->getPostId();
 ```
 
 #### uploadMedia(), getMediaIds()
