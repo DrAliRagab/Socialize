@@ -71,7 +71,7 @@ class Instagram extends Provider implements ProviderInterface
     /**
      * Publish Instagram Photo
      */
-    public function publishImage(string $imageUrl, ?string $caption = null, ?array $options = null): self
+    public function publishImage(string $imageUrl, ?string $caption = null, ?array $options = []): self
     {
         $this->postData = array_merge([
             'image_url' => $imageUrl,
@@ -87,7 +87,7 @@ class Instagram extends Provider implements ProviderInterface
     /**
      * Publish Instagram Carousel
      */
-    private function publishCarousel(array $mediaIds, ?string $caption = null, ?array $options = null): self
+    private function publishCarousel(array $mediaIds, ?string $caption = null, ?array $options = []): self
     {
         $this->postData = array_merge([
             'media_type' => 'CAROUSEL',

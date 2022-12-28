@@ -233,7 +233,7 @@ class Twitter extends Provider implements ProviderInterface
     /**
      * Share
      */
-    public function share(?string $message = null, ?string $image = null, ?array $options = null): self
+    public function share(?string $message = null, ?string $image = null, ?array $options = []): self
     {
         $this->postData = array_merge($this->postData, $options);
 

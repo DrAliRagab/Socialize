@@ -117,7 +117,7 @@ class Facebook extends Provider implements ProviderInterface
      */
     public function getPost(string $postId, array $fields = null): Collection
     {
-        $fields = [
+        $fields ??= [
             'id',
             'created_time',
             'message',
@@ -175,7 +175,7 @@ class Facebook extends Provider implements ProviderInterface
      */
     public function getComments(int $postId, int $limit = 25, array $fields = null): Collection
     {
-        $fields = [
+        $fields ??= [
             'id',
             'created_time',
             'message',
@@ -235,7 +235,7 @@ class Facebook extends Provider implements ProviderInterface
     /**
      * Share
      */
-    public function share(?string $message = null, ?string $image = null, ?array $options = null): self
+    public function share(?string $message = null, ?string $image = null, ?array $options = []): self
     {
         $this->postData = array_merge($this->postData, $options);
 
