@@ -1,9 +1,8 @@
 # Socialize your Laravel project easily
 
-<!-- [![Latest Version on Packagist](https://img.shields.io/packagist/v/draliragab/socialize.svg?style=flat-square)](https://packagist.org/packages/draliragab/socialize)
-[![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/draliragab/socialize/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/draliragab/socialize/actions?query=workflow%3Arun-tests+branch%3Amain)
-[![GitHub Code Style Action Status](https://img.shields.io/github/actions/workflow/status/draliragab/socialize/fix-php-code-style-issues.yml?branch=main&label=code%20style&style=flat-square)](https://github.com/draliragab/socialize/actions?query=workflow%3A"Fix+PHP+code+style+issues"+branch%3Amain)
-[![Total Downloads](https://img.shields.io/packagist/dt/draliragab/socialize.svg?style=flat-square)](https://packagist.org/packages/draliragab/socialize) -->
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/draliragab/socialize.svg?style=flat-square)](https://packagist.org/packages/draliragab/socialize)
+[![License](https://img.shields.io/github/license/draliragab/socialize?style=flat-square)](https://github.com/DrAliRagab/Socialize/blob/master/LICENSE.md)
+
 
 **Socialize** is a package that helps you to add social media features to your Laravel project easily.
 
