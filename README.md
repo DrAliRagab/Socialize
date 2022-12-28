@@ -383,7 +383,7 @@ $postId = $twitter
     ->restrictReply('mentionedUsers')
     ->inReplyTo('12345679101112')
     ->tweet(
-        text: 'https://matchez.today/en/',
+        text: 'https://example.com/',
     )->getPostId();
 
 ```
