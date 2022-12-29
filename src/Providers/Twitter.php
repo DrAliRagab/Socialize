@@ -22,7 +22,7 @@ class Twitter extends Provider implements ProviderInterface
 
     public function __construct(string $config = 'default')
     {
-        $this->config = config('socialize.twitter.' . $config);
+        $this->config = config('socialize.twitter.'.$config);
 
         $this->twitterConsumerKey = $this->config['app_consumer_key'];
         $this->twitterConsumerSecret = $this->config['app_consumer_secret'];
@@ -217,7 +217,7 @@ class Twitter extends Provider implements ProviderInterface
     public function addComment(string $message, ?string $tweetId = null): self
     {
         $tweetId ??= $this->tweetId;
-                
+
         $postData = [
             'text' => $message,
             'reply' => [
@@ -237,15 +237,15 @@ class Twitter extends Provider implements ProviderInterface
     {
         $this->postData = array_merge($this->postData, $options);
 
-        if (!$image) {
-            $this->throwExceptionIf(!$message, 'Message is required');
+        if (! $image) {
+            $this->throwExceptionIf(! $message, 'Message is required');
 
             return $this->tweet($message);
         }
 
         $mediaIds = $this->uploadMedia([$image])->getMediaIds();
 
-        $this->throwExceptionIf(!$mediaIds, 'Error uploading media');
+        $this->throwExceptionIf(! $mediaIds, 'Error uploading media');
 
         return $this->addMedia($mediaIds)->tweet($message);
     }

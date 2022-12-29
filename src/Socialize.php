@@ -7,30 +7,26 @@ use DrAliRagab\Socialize\Providers\Provider;
 class Socialize
 {
     /**
-     * Start a new provider
-     *
-     * @param  string  $provider
-     * @param  string  $config
-     * @return Provider
+     * Facebook provider
      */
-    private static function provider(string $provider, string $config = 'default'): Provider
+    public static function facebook(string $config = 'default'): Provider
     {
-        $provider = __NAMESPACE__.'\\Providers\\'.ucfirst($provider);
-
-        return new $provider($config);
+        return new Providers\Facebook($config);
     }
 
     /**
-     * Start a new provider
-     *
-     * @param  string  $provider
-     * @param  array  $args
-     * @return Provider
+     * Twitter provider
      */
-    public static function __callStatic(string $provider, array $args): Provider
+    public static function twitter(string $config = 'default'): Provider
     {
-        $config = $args[0] ?? 'default';
+        return new Providers\Twitter($config);
+    }
 
-        return self::provider($provider, $config);
+    /**
+     * Instagram provider
+     */
+    public static function instagram(string $config = 'default'): Provider
+    {
+        return new Providers\Instagram($config);
     }
 }
