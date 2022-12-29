@@ -1,6 +1,6 @@
 name: "Auto Changelog"
 
-on: [push, release]
+on: [push, release, workflow_dispatch]
 
 jobs:
   update:
