@@ -6,7 +6,6 @@ use Illuminate\Support\Facades\Facade;
 
 /**
  * @see \DrAliRagab\Socialize\Socialize
- * 
  */
 class Socialize extends Facade
 {

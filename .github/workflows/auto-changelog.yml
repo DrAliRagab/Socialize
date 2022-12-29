@@ -1,8 +1,6 @@
 name: "Auto Changelog"
 
-on:
-  release:
-    types: [push, released]
+on: [push, release]
 
 jobs:
   update:
