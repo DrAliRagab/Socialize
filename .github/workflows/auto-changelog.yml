@@ -1,0 +1,14 @@
+name: "Auto Changelog"
+
+on:
+  release:
+    types: [released]
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Changelog
+      uses: ardalanamini/auto-changelog@v3
+      id: changelog
