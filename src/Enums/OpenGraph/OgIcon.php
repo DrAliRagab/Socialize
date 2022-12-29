@@ -1,8 +1,8 @@
 <?php
 
-namespace DrAliRagab\Socialize\Enums;
+namespace DrAliRagab\Socialize\Enums\OpenGraph;
 
-enum ogIcon: int
+enum OgIcon: int
 {
     case AGREE = 1402739093121224;
     case ATTENDING = 395780397279063;

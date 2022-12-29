@@ -1,8 +1,8 @@
 <?php
 
-namespace DrAliRagab\Socialize\Enums;
+namespace DrAliRagab\Socialize\Enums\OpenGraph;
 
-enum ogAction: int
+enum OgAction: int
 {
     case AGREES = 1267092843327003;
     case ATTENDS = 668012816568345;

@@ -3,9 +3,9 @@
 namespace DrAliRagab\Socialize\Providers;
 
 use Carbon\Carbon;
-use DrAliRagab\Socialize\Enums\ogAction;
-use DrAliRagab\Socialize\Enums\ogIcon;
-use DrAliRagab\Socialize\Enums\ogObject;
+use DrAliRagab\Socialize\Enums\OpenGraph\OgAction;
+use DrAliRagab\Socialize\Enums\OpenGraph\OgIcon;
+use DrAliRagab\Socialize\Enums\OpenGraph\OgObject;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 
@@ -438,7 +438,7 @@ class Facebook extends Provider implements ProviderInterface
     /**
      * Add a feeling or activity and an icon to a page post. og_action_type_id and og_object_id are required when posting a feeling or activity. og_icon_id is optional however if not used an icon will be automatically supplied based on the og_object_id.
      */
-    public function setAction(ogAction $action, ogObject $object, ?ogIcon $icon = null): self
+    public function setAction(OgAction $action, OgObject $object, ?OgIcon $icon = null): self
     {
         $this->postData['og_action_type_id'] = $action->value;
         $this->postData['og_object_id'] = $object->value;

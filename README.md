@@ -11,7 +11,7 @@ You can share posts to **Facebook**, **Twitter**, **Instagram** and more is comi
 $fb = Socialize::facebook()
         ->setMessage('Awesome message')
         ->setLink('https://github.com/')
-        ->setAction(ogAction::FEELS, ogObject::EXCITED)
+        ->setAction(OgAction::FEELS, OgObject::EXCITED)
         ->sharePost();
 
 dump($fb->getPostId()); // 123456789101112
@@ -198,7 +198,7 @@ setPublished(bool $published = true)
 setScheduledPublishTime(int|Carbon $scheduled_publish_time)
 setTags(array $tagsIds)
 setTargeting(int $age_min = null, array $geo_locations = null)
-setAction(ogAction $action, ogObject $object, ?ogIcon $icon = null)
+setAction(OgAction $action, OgObject $object, ?OgIcon $icon = null)
 attachMedia(int $mediaId)
 attachMedias(array $mediaIds)
 
@@ -216,8 +216,8 @@ Example:
 
 ```php
 use DrAliRagab\Socialize\Socialize;
-use DrAliRagab\Socialize\Enums\ogAction;
-use DrAliRagab\Socialize\Enums\ogObject;
+use DrAliRagab\Socialize\Enums\OpenGraph\OgAction;
+use DrAliRagab\Socialize\Enums\OpenGraph\OgObject;
 
 $fb = Socialize::facebook();
 $response = $fb
@@ -247,7 +247,7 @@ $response = $fb
     ->setTargeting(
         age_min: 18
     )
-    ->setAction(ogAction::FEELS, ogObject::EXCITED)
+    ->setAction(OgAction::FEELS, OgObject::EXCITED)
     ->sharePost()   // Must be called after setting the options
     ->addComment('Awesome comment');    // Must be called after sharing the post
 

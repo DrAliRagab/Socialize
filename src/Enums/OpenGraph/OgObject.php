@@ -1,8 +1,8 @@
 <?php
 
-namespace DrAliRagab\Socialize\Enums;
+namespace DrAliRagab\Socialize\Enums\OpenGraph;
 
-enum ogObject: int
+enum OgObject: int
 {
     case ACCOMPLISHED = 136050896551329;
     case ADVENTUROUS = 224113357712800;
