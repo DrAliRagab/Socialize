@@ -76,7 +76,7 @@ class Instagram extends Provider implements ProviderInterface
         $this->postData = array_merge([
             'image_url' => $imageUrl,
             'caption' => $caption,
-        ], $options);
+        ], $options ?? []);
 
         $this->createContainer();
         $this->publishContainer();
@@ -93,7 +93,7 @@ class Instagram extends Provider implements ProviderInterface
             'media_type' => 'CAROUSEL',
             'children' => implode(',', $mediaIds),
             'caption' => $caption,
-        ], $options);
+        ], $options ?? []);
 
         $this->createContainer();
         $this->publishContainer();

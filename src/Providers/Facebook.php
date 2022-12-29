@@ -481,7 +481,7 @@ class Facebook extends Provider implements ProviderInterface
             'url' => $photoUrl,
             'published' => $published,
             'temporary' => $temporary,
-        ], $this->postData);
+        ], $this->postData ?? []);
 
         if ($caption) {
             $this->postData['caption'] = $caption;
@@ -514,7 +514,7 @@ class Facebook extends Provider implements ProviderInterface
         $this->postData = array_merge([
             'file_url' => $videoUrl,
             'published' => $publish,
-        ], $this->postData);
+        ], $this->postData ?? []);
 
         if ($title) {
             $this->postData['title'] = $title;
@@ -542,7 +542,7 @@ class Facebook extends Provider implements ProviderInterface
      */
     public function share(?string $message = null, ?string $image = null, ?array $options = []): self
     {
-        $this->postData = array_merge($this->postData, $options);
+        $this->postData = array_merge($this->postData, $options ?? []);
 
         if ($image) {
             return $this->uploadPhoto($image, $message, true, false);
