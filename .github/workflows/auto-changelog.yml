@@ -2,7 +2,7 @@ name: "Auto Changelog"
 
 on:
   release:
-    types: [released]
+    types: [workflow_dispatch, released]
 
 jobs:
   update:
