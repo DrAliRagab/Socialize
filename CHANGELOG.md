@@ -2,6 +2,10 @@
 
 All notable changes to `Socialize` will be documented in this file.
 
+## v1.2.3 - 2022-12-29
+
+**Full Changelog**: https://github.com/DrAliRagab/Socialize/compare/v1.2.2...v1.2.3
+
 ## [v1.2.0](https://github.com/DrAliRagab/Socialize/compare/v1.1.0...v1.2.0)
 
 - Fixed a bug in Facebook `getPost()`, `getComments()` and  method.
