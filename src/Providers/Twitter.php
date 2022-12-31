@@ -213,7 +213,7 @@ class Twitter extends Provider implements ProviderInterface
     }
 
     /**
-     * Add Comment to Instagram Post
+     * Add Comment to a tweet
      */
     public function addComment(string $message, ?string $tweetId = null): self
     {
