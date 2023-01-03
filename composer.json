@@ -53,7 +53,7 @@
         "test": "vendor/bin/pest",
         "test-coverage": "vendor/bin/pest --coverage",
         "format": "vendor/bin/pint",
-        "compatibility": "vendor/bin/phpcs -p ./src --standard=PHPCompatibility --runtime-set testVersion 8.1-"
+        "compatibility": "vendor/bin/phpcs -p ./src --standard=PHPCompatibility --runtime-set testVersion 8.0-"
     },
     "config": {
         "sort-packages": true,
