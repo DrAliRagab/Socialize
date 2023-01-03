@@ -2,6 +2,16 @@
 
 All notable changes to `Socialize` will be documented in this file.
 
+## v1.3.0 - 2023-01-03
+
+**Full Changelog**: https://github.com/DrAliRagab/Socialize/compare/v1.2.3...v1.3.0
+
+Changed: [Decrease the minimum PHP version to 8.0](https://github.com/DrAliRagab/Socialize/commit/0aefd80aec50103725d123edfe859f5f62b45507)
+
+Added: [Add $granularity parameter to twitter queryPlace()](https://github.com/DrAliRagab/Socialize/commit/59d52bfca40eab63377ae085a8b2b8b5e73de24d)
+
+Fix: Minor fixes.
+
 ## v1.2.3 - 2022-12-29
 
 **Full Changelog**: https://github.com/DrAliRagab/Socialize/compare/v1.2.2...v1.2.3
