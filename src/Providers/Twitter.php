@@ -140,7 +140,7 @@ class Twitter extends Provider implements ProviderInterface
         // Query places done using v1.1
         $response = $this->makeRequest('get', '1.1', 'geo/search', [
             'query' => $query,
-            'granularity' => $granularity
+            'granularity' => $granularity,
         ]);
 
         $placeId = $response?->result?->places[0]?->id ?? null;
