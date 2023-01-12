@@ -465,8 +465,8 @@ class Facebook extends Provider implements ProviderInterface
      */
     public function attachMedias(array $mediaIds): self
     {
-        foreach ($mediaIds as $mediaId) {
-            $this->attachMedia($mediaId);
+        foreach ($mediaIds as $k => $mediaId) {
+            $this->postData['attached_media'][$k] = '{"media_fbid":"' . $mediaId . '"}';
         }
 
         return $this;
