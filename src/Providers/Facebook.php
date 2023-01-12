@@ -477,11 +477,11 @@ class Facebook extends Provider implements ProviderInterface
      */
     public function uploadPhoto(string $photoUrl, string $caption = null, bool $published = false, bool $temporary = true): self
     {
-        $this->postData = array_merge([
+        $this->postData = [
             'url' => $photoUrl,
             'published' => $published,
             'temporary' => $temporary,
-        ], $this->postData ?? []);
+        ];
 
         if ($caption) {
             $this->postData['caption'] = $caption;
@@ -511,10 +511,10 @@ class Facebook extends Provider implements ProviderInterface
      */
     public function uploadVideo(string $videoUrl, string $title = null, bool $publish = false): int
     {
-        $this->postData = array_merge([
+        $this->postData = [
             'file_url' => $videoUrl,
             'published' => $publish,
-        ], $this->postData ?? []);
+        ];
 
         if ($title) {
             $this->postData['title'] = $title;
