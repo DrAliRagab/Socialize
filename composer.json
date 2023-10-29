@@ -2,9 +2,15 @@
     "name": "draliragab/socialize",
     "description": "Socialize your Laravel project easily",
     "keywords": [
-        "DrAliRagab",
         "laravel",
-        "socialize"
+        "socialize",
+        "social",
+        "social media",
+        "api",
+        "integration",
+        "twitter",
+        "facebook",
+        "instagram"
     ],
     "homepage": "https://github.com/draliragab/socialize",
     "license": "MIT",
@@ -17,20 +23,20 @@
     ],
     "require": {
         "php": "^8.0",
-        "abraham/twitteroauth": "^4.0",
-        "spatie/laravel-package-tools": "^1.13.0"
+        "abraham/twitteroauth": "^6.0",
+        "spatie/laravel-package-tools": "^1.16"
     },
     "require-dev": {
         "laravel/pint": "^1.0",
-        "nunomaduro/collision": "^6.0",
-        "nunomaduro/larastan": "^2.0.1",
-        "orchestra/testbench": "^7.0",
-        "pestphp/pest": "^1.21",
-        "pestphp/pest-plugin-laravel": "^1.1",
+        "nunomaduro/collision": "^7.0",
+        "nunomaduro/larastan": "^2.0",
+        "orchestra/testbench": "^8.0",
+        "pestphp/pest": "^2.0",
+        "pestphp/pest-plugin-laravel": "^2.0",
         "phpstan/extension-installer": "^1.1",
         "phpstan/phpstan-deprecation-rules": "^1.0",
         "phpstan/phpstan-phpunit": "^1.0",
-        "phpunit/phpunit": "^9.5",
+        "phpunit/phpunit": "^10",
         "phpcompatibility/php-compatibility": "*"
     },
     "autoload": {
@@ -47,7 +53,7 @@
     "scripts": {
         "post-autoload-dump": "@php ./vendor/bin/testbench package:discover --ansi",
         "post-install-cmd": "\"vendor/bin/phpcs\" --config-set installed_paths vendor/phpcompatibility/php-compatibility",
-        "post-update-cmd" : "\"vendor/bin/phpcs\" --config-set installed_paths vendor/phpcompatibility/php-compatibility",    
+        "post-update-cmd": "\"vendor/bin/phpcs\" --config-set installed_paths vendor/phpcompatibility/php-compatibility",
         "analyse": "vendor/bin/phpstan analyse --level=5 ./src",
         "test": "vendor/bin/pest",
         "test-coverage": "vendor/bin/pest --coverage",
