@@ -2,6 +2,10 @@
 
 All notable changes to `Socialize` will be documented in this file.
 
+## v1.6.0 - 2023-10-26
+
+**Full Changelog**: https://github.com/DrAliRagab/Socialize/compare/v1.5.0...v1.6.0
+
 ## v1.5.0 - 2023-07-08
 
 **Fixed**: removed "illuminate/contracts" from dependencies
