@@ -2,6 +2,10 @@
 
 All notable changes to `Socialize` will be documented in this file.
 
+## v1.7.1 - 2024-11-16
+
+**Full Changelog**: https://github.com/DrAliRagab/Socialize/compare/v1.7.0...v1.7.1
+
 ## v1.6.0 - 2023-10-26
 
 **Full Changelog**: https://github.com/DrAliRagab/Socialize/compare/v1.5.0...v1.6.0
