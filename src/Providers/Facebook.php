@@ -150,7 +150,7 @@ class Facebook extends Provider implements ProviderInterface
     /**
      * Add comment to a post.
      */
-    public function addComment(string $message, ?int $postId = null): self
+    public function addComment(string $message, ?string $postId = null): self
     {
         $postId ??= $this->getPostId();
 
