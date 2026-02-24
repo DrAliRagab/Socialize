@@ -26,7 +26,25 @@ it('shares a linkedin post with commentary and link', function (): void {
 
     Http::assertSent(fn (Request $request): bool => $request->hasHeader('Linkedin-Version', '202602')
         && $request->hasHeader('X-Restli-Protocol-Version', '2.0.0')
-        && ($request->data()['author'] ?? null) === 'urn:li:person:123');
+        && ($request->data()['author'] ?? null)                       === 'urn:li:person:123'
+        && ($request->data()['content']['article']['source'] ?? null) === 'https://example.com/update'
+        && ($request->data()['content']['article']['title'] ?? null)  === 'Professional update');
+});
+
+it('uses explicit link article title when provided via link second parameter', function (): void {
+    Http::fake([
+        'https://api.linkedin.com/rest/posts' => Http::response(['id' => 'urn:li:share:custom-title'], 201),
+    ]);
+
+    $shareResult = Socialize::linkedin()
+        ->message('Professional update')
+        ->link('https://example.com/update', 'Custom LinkedIn Title')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('urn:li:share:custom-title');
+
+    Http::assertSent(fn (Request $request): bool => ($request->data()['content']['article']['title'] ?? null) === 'Custom LinkedIn Title');
 });
 
 it('shares linkedin post with media urn only', function (): void {
@@ -111,6 +129,21 @@ it('uses default linkedin version header when version is not configured', functi
     expect($shareResult->id())->toBe('urn:li:share:default-version');
 
     Http::assertSent(fn (Request $request): bool => $request->hasHeader('Linkedin-Version', '202602'));
+});
+
+it('uses fallback article title when sharing linkedin link without a message', function (): void {
+    Http::fake([
+        'https://api.linkedin.com/rest/posts' => Http::response(['id' => 'urn:li:share:fallback-title'], 201),
+    ]);
+
+    $shareResult = Socialize::linkedin()
+        ->link('https://example.com/article')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('urn:li:share:fallback-title');
+
+    Http::assertSent(fn (Request $request): bool => ($request->data()['content']['article']['title'] ?? null) === 'Shared link');
 });
 
 it('throws when linkedin required credentials are missing', function (): void {

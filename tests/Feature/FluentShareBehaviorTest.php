@@ -73,6 +73,10 @@ it('rejects empty provider-specific identifiers', function (): void {
     ;
 });
 
+it('rejects empty link article title when provided', function (): void {
+    Socialize::linkedin()->link('https://example.com/article', '   ');
+})->throws(InvalidSharePayloadException::class, 'link article title cannot be empty when provided');
+
 it('accepts metadata chaining and ignores blank nullable shared values', function (): void {
     Http::fake([
         'https://api.x.com/2/tweets' => Http::response(['data' => ['id' => 'x-metadata']], 200),

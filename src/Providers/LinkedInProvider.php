@@ -77,6 +77,7 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
             $payloadBody['content'] = [
                 'article' => [
                     'source' => mb_trim($sharePayload->link()),
+                    'title'  => $this->articleTitle($sharePayload),
                 ],
             ];
         }
@@ -197,5 +198,22 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
         }
 
         return $commentary;
+    }
+
+    private function articleTitle(SharePayload $sharePayload): string
+    {
+        $title = $sharePayload->option('article_title');
+
+        if (is_string($title) && mb_trim($title) !== '')
+        {
+            return mb_trim($title);
+        }
+
+        if (is_string($sharePayload->message()) && mb_trim($sharePayload->message()) !== '')
+        {
+            return mb_trim($sharePayload->message());
+        }
+
+        return 'Shared link';
     }
 }

@@ -50,7 +50,7 @@ foreach (['facebook', 'twitter', 'linkedin'] as $provider) {
 
 ## Shared Fluent Methods
 - `message(?string $message)`
-- `link(?string $url)`
+- `link(?string $url, ?string $articleTitle = null)` (`$articleTitle` is used for LinkedIn link posts)
 - `imageUrl(?string $url)`
 - `videoUrl(?string $url)`
 - `mediaId(string $id)`
@@ -125,8 +125,8 @@ Minimal example:
 
 General:
 - `SOCIALIZE_DEFAULT_PROFILE` (optional, default: `default`)
-- `SOCIALIZE_HTTP_TIMEOUT` (optional)
-- `SOCIALIZE_HTTP_CONNECT_TIMEOUT` (optional)
+- `SOCIALIZE_HTTP_TIMEOUT` (optional, default: `120`)
+- `SOCIALIZE_HTTP_CONNECT_TIMEOUT` (optional, default: `30`)
 - `SOCIALIZE_HTTP_RETRIES` (optional)
 - `SOCIALIZE_HTTP_RETRY_SLEEP_MS` (optional)
 
@@ -190,6 +190,35 @@ Run stricter Rector config:
 
 ```bash
 composer rector
+```
+
+## Local Tester
+
+You can run real end-to-end provider calls locally without creating a full Laravel app.
+
+1. Create `.testing.env` from `.testing.env.example` and fill credentials.
+2. Run the CLI tester:
+
+```bash
+php bin/local-tester.php --help
+```
+
+Full command reference:
+- [`bin/LOCAL_TESTER_COMMANDS.md`](bin/LOCAL_TESTER_COMMANDS.md)
+
+Share examples:
+
+```bash
+php bin/local-tester.php share --provider=facebook --message="Hello" --link="https://example.com"
+php bin/local-tester.php share --provider=instagram --video-url="https://cdn.example.com/reel.mp4" --reel
+php bin/local-tester.php share --provider=twitter --message="Launch" --link="https://example.com"
+php bin/local-tester.php share --provider=linkedin --message="Update" --link="https://example.com"
+```
+
+Delete example:
+
+```bash
+php bin/local-tester.php delete --provider=linkedin --post-id="urn:li:share:123"
 ```
 
 ## License

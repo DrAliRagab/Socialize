@@ -50,9 +50,21 @@ final class FluentShare
         return $this;
     }
 
-    public function link(?string $link): self
+    public function link(?string $link, ?string $articleTitle = null): self
     {
         $this->link = $this->normalizeNullableString($link);
+
+        if ($articleTitle !== null)
+        {
+            $articleTitle = $this->normalizeNullableString($articleTitle);
+
+            if ($articleTitle === null)
+            {
+                throw new InvalidSharePayloadException('link article title cannot be empty when provided.');
+            }
+
+            $this->option('article_title', $articleTitle);
+        }
 
         return $this;
     }
