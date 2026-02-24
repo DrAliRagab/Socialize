@@ -42,14 +42,60 @@ it('shares instagram reels video', function (): void {
 
     expect($shareResult->id())->toBe('ig-video-1');
 
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/media')
+        && ! str_contains($request->url(), '/media_publish')
+        && ($request->data()['media_type'] ?? null) === 'REELS');
+});
+
+it('sends instagram reels media_type only on container creation and not on publish call', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-video'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-video-2'], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->message('Reel request shape')
+        ->videoUrl('https://cdn.example.com/reel-2.mp4')
+        ->reel()
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-video-2');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/98765/media'
+        && ($request->data()['media_type'] ?? null)                 === 'REELS');
+
     Http::assertSent(function (Request $request): bool {
-        if (! str_contains($request->url(), '/media') || str_contains($request->url(), '/media_publish'))
+        if ($request->url() !== 'https://graph.facebook.com/v25.0/98765/media_publish')
         {
             return false;
         }
 
-        return ($request->data()['media_type'] ?? null) === 'REELS';
+        return ! \array_key_exists('media_type', $request->data())
+            && ($request->data()['creation_id'] ?? null) === 'container-video';
     });
+
+    Http::assertSentCount(2);
+});
+
+it('uses default instagram VIDEO media_type for video containers when reel is not requested', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-video-default'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-video-default'], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->message('Default video type')
+        ->videoUrl('https://cdn.example.com/default.mp4')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-video-default');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/98765/media'
+        && ($request->data()['media_type'] ?? null)                 === 'VIDEO');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/98765/media_publish');
 });
 
 it('shares instagram carousel content', function (): void {
