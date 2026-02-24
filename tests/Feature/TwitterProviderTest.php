@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use DrAliRagab\Socialize\Exceptions\ApiException;
+use DrAliRagab\Socialize\Exceptions\InvalidConfigException;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\Exceptions\UnsupportedFeatureException;
 use DrAliRagab\Socialize\Facades\Socialize;
@@ -11,7 +12,13 @@ use Illuminate\Support\Facades\Http;
 
 it('shares a text post on x', function (): void {
     Http::fake([
-        'https://api.x.com/2/tweets' => Http::response(['data' => ['id' => 'x-1']], 200),
+        'https://api.x.com/2/tweets' => Http::response([
+            'data' => [
+                'id'                     => 'x-1',
+                'text'                   => 'Hello X https://example.com',
+                'edit_history_tweet_ids' => ['x-1'],
+            ],
+        ], 200),
     ]);
 
     $shareResult = Socialize::twitter()
@@ -23,11 +30,19 @@ it('shares a text post on x', function (): void {
     expect($shareResult->id())->toBe('x-1')
         ->and($shareResult->url())->toBe('https://x.com/i/web/status/x-1')
     ;
+
+    Http::assertSent(fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer x-token'));
 });
 
 it('shares a media x post with reply quote and poll', function (): void {
     Http::fake([
-        'https://api.x.com/2/tweets' => Http::response(['data' => ['id' => 'x-2']], 200),
+        'https://api.x.com/2/tweets' => Http::response([
+            'data' => [
+                'id'                     => 'x-2',
+                'text'                   => 'Vote now',
+                'edit_history_tweet_ids' => ['x-2'],
+            ],
+        ], 200),
     ]);
 
     $shareResult = Socialize::twitter()
@@ -58,6 +73,20 @@ it('deletes x post', function (): void {
 
     expect(Socialize::twitter()->delete('1234'))->toBeTrue();
 });
+
+it('throws when x delete post id is empty', function (): void {
+    Http::fake();
+
+    Socialize::twitter()->delete('   ');
+})->throws(InvalidSharePayloadException::class, 'X post id cannot be empty');
+
+it('throws when x delete token is missing', function (): void {
+    Http::fake();
+
+    config()->set('socialize.providers.twitter.profiles.default.bearer_token');
+
+    Socialize::twitter()->delete('123');
+})->throws(InvalidConfigException::class, 'Missing required credential [bearer_token]');
 
 it('fails x share when image url is used without media ids', function (): void {
     Http::fake();

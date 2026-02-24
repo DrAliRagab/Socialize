@@ -49,6 +49,27 @@ it('shares a facebook photo post', function (): void {
     Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/photos'));
 });
 
+it('shares a facebook photo post without caption parts', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/*' => Http::response(['post_id' => 'fb-photo-no-caption'], 200),
+    ]);
+
+    $shareResult = Socialize::facebook()
+        ->imageUrl('https://cdn.example.com/pic.jpg')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('fb-photo-no-caption');
+
+    Http::assertSent(function (Request $request): bool {
+        $data = $request->data();
+
+        return str_contains($request->url(), '/photos')
+            && \array_key_exists('caption', $data)
+            && $data['caption'] === null;
+    });
+});
+
 it('shares a facebook video post', function (): void {
     Http::fake([
         'https://graph.facebook.com/*' => Http::response(['id' => 'fb-video'], 200),
@@ -72,6 +93,12 @@ it('deletes a facebook post', function (): void {
 
     expect(Socialize::facebook()->delete('123_456'))->toBeTrue();
 });
+
+it('throws for empty facebook post id on delete', function (): void {
+    Http::fake();
+
+    Socialize::facebook()->delete('   ');
+})->throws(InvalidSharePayloadException::class, 'Facebook post id cannot be empty');
 
 it('throws for invalid facebook link url', function (): void {
     Http::fake();
@@ -113,3 +140,15 @@ it('throws for facebook invalid response body missing id', function (): void {
 
     Socialize::facebook()->message('Hello')->share();
 })->throws(ApiException::class, 'did not return a post id');
+
+it('falls back to default facebook base url when base_url config is invalid', function (): void {
+    config()->set('socialize.providers.facebook.base_url', ['invalid']);
+
+    Http::fake([
+        'https://graph.facebook.com/*' => Http::response(['id' => 'fb-default-base'], 200),
+    ]);
+
+    $shareResult = Socialize::facebook()->message('Fallback base URL')->share();
+
+    expect($shareResult->id())->toBe('fb-default-base');
+});

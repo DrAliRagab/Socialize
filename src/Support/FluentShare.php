@@ -163,7 +163,14 @@ final class FluentShare
     {
         $this->ensureProvider(Provider::Instagram);
 
-        return $this->option('alt_text', mb_trim($altText));
+        $altText = mb_trim($altText);
+
+        if ($altText === '')
+        {
+            throw new InvalidSharePayloadException('altText cannot be empty.');
+        }
+
+        return $this->option('alt_text', $altText);
     }
 
     public function reel(): self
@@ -177,14 +184,28 @@ final class FluentShare
     {
         $this->ensureProvider(Provider::Twitter);
 
-        return $this->option('reply_to', mb_trim($postId));
+        $postId = mb_trim($postId);
+
+        if ($postId === '')
+        {
+            throw new InvalidSharePayloadException('replyTo post id cannot be empty.');
+        }
+
+        return $this->option('reply_to', $postId);
     }
 
     public function quote(string $postId): self
     {
         $this->ensureProvider(Provider::Twitter);
 
-        return $this->option('quote_tweet_id', mb_trim($postId));
+        $postId = mb_trim($postId);
+
+        if ($postId === '')
+        {
+            throw new InvalidSharePayloadException('quote post id cannot be empty.');
+        }
+
+        return $this->option('quote_tweet_id', $postId);
     }
 
     /**
@@ -214,21 +235,42 @@ final class FluentShare
     {
         $this->ensureProvider(Provider::LinkedIn);
 
-        return $this->option('visibility', mb_strtoupper(mb_trim($visibility)));
+        $visibility = mb_strtoupper(mb_trim($visibility));
+
+        if ($visibility === '')
+        {
+            throw new InvalidSharePayloadException('LinkedIn visibility cannot be empty.');
+        }
+
+        return $this->option('visibility', $visibility);
     }
 
     public function distribution(string $distribution): self
     {
         $this->ensureProvider(Provider::LinkedIn);
 
-        return $this->option('distribution', mb_strtoupper(mb_trim($distribution)));
+        $distribution = mb_strtoupper(mb_trim($distribution));
+
+        if ($distribution === '')
+        {
+            throw new InvalidSharePayloadException('LinkedIn distribution cannot be empty.');
+        }
+
+        return $this->option('distribution', $distribution);
     }
 
     public function mediaUrn(string $mediaUrn): self
     {
         $this->ensureProvider(Provider::LinkedIn);
 
-        return $this->option('media_urn', mb_trim($mediaUrn));
+        $mediaUrn = mb_trim($mediaUrn);
+
+        if ($mediaUrn === '')
+        {
+            throw new InvalidSharePayloadException('LinkedIn media URN cannot be empty.');
+        }
+
+        return $this->option('media_urn', $mediaUrn);
     }
 
     public function share(): ShareResult

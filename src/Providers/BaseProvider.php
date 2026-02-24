@@ -132,7 +132,7 @@ abstract class BaseProvider
     {
         $version = $this->providerConfig['graph_version'] ?? null;
 
-        return is_string($version) && $version !== '' ? $version : 'v25.0';
+        return is_string($version) && mb_trim($version) !== '' ? mb_trim($version) : 'v25.0';
     }
 
     abstract protected function provider(): Provider;

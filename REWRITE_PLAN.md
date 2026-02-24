@@ -208,3 +208,25 @@ Rewrite README with:
 6. Configure PHPStan max strictness.
 7. Run and fix until tests + analysis pass and coverage >=95%.
 8. Finalize docs.
+
+## 10) Post-Rewrite Audit (2026-02-24)
+
+### Checked against plan
+- Unified API with provider switching: done.
+- Provider-specific fluent methods: done.
+- Facebook/Instagram/X/LinkedIn drivers: done.
+- Configurable HTTP retries/timeouts: done.
+- Error normalization and typed exceptions: done.
+- LinkedIn support added (in addition to original providers): done.
+
+### Tightening done after audit
+- Updated baseline to PHP `^8.4` and re-enabled global `mb_*` string function normalization.
+- Added stricter input validation for empty provider-specific IDs/options.
+- Added stricter delete validation (empty post IDs fail fast).
+- Added LinkedIn version format validation (`YYYYMM`).
+- Added Instagram publish fallback status query (`status_code`, `status`) for diagnostics.
+- Expanded tests to target edge/error branches and provider-specific constraints.
+
+### Remaining optional enhancements (future)
+- Optional built-in pre-check for Instagram `content_publishing_limit`.
+- Optional first-class LinkedIn image upload helper (`/rest/images?action=initializeUpload` flow).

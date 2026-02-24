@@ -60,7 +60,12 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
 
         if (! is_string($id) || $id === '')
         {
-            throw ApiException::invalidResponse($this->provider(), 'Instagram API did not return a media id after publishing.');
+            $statusDetail = $this->containerStatusDetail($creationId, $accessToken, $version);
+
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                sprintf('Instagram API did not return a media id after publishing.%s', $statusDetail),
+            );
         }
 
         return new ShareResult(
@@ -77,8 +82,14 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
     public function delete(string $postId): bool
     {
         $this->requireCredentials('access_token');
+        $postId = mb_trim($postId);
 
-        $response = $this->decode($this->send('DELETE', sprintf('/%s/%s', $this->graphVersion(), mb_trim($postId)), [
+        if ($postId === '')
+        {
+            throw new InvalidSharePayloadException('Instagram post id cannot be empty.');
+        }
+
+        $response = $this->decode($this->send('DELETE', sprintf('/%s/%s', $this->graphVersion(), $postId), [
             'access_token' => (string)$this->credential('access_token'),
         ]));
 
@@ -214,5 +225,34 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
         {
             throw new InvalidSharePayloadException(sprintf('Instagram %s must be a valid URL.', $field));
         }
+    }
+
+    private function containerStatusDetail(string $creationId, string $accessToken, string $version): string
+    {
+        $statusBody = $this->decode($this->send('GET', sprintf('/%s/%s', $version, $creationId), [
+            'access_token' => $accessToken,
+            'fields'       => 'status_code,status',
+        ]));
+
+        $statusCode = $statusBody['status_code'] ?? null;
+        $status     = $statusBody['status']      ?? null;
+        $parts      = [];
+
+        if (is_string($statusCode) && $statusCode !== '')
+        {
+            $parts[] = sprintf('status_code=%s', $statusCode);
+        }
+
+        if (is_string($status) && $status !== '')
+        {
+            $parts[] = sprintf('status=%s', $status);
+        }
+
+        if ($parts === [])
+        {
+            return '';
+        }
+
+        return ' Container status: ' . implode(', ', $parts);
     }
 }

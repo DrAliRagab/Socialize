@@ -66,6 +66,16 @@ final readonly class SocializeManager
 
         $profile = mb_trim($profile ?? $defaultProfile);
 
+        if ($profile === '')
+        {
+            $profile = mb_trim($defaultProfile);
+        }
+
+        if ($profile === '')
+        {
+            $profile = 'default';
+        }
+
         /** @var array<string, mixed>|null $credentials */
         $credentials = $profiles[$profile] ?? null;
 

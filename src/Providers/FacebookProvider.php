@@ -127,8 +127,14 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
     public function delete(string $postId): bool
     {
         $this->requireCredentials('access_token');
+        $postId = mb_trim($postId);
 
-        $endpoint = sprintf('/%s/%s', $this->graphVersion(), mb_trim($postId));
+        if ($postId === '')
+        {
+            throw new InvalidSharePayloadException('Facebook post id cannot be empty.');
+        }
+
+        $endpoint = sprintf('/%s/%s', $this->graphVersion(), $postId);
         $response = $this->decode($this->send('DELETE', $endpoint, [
             'access_token' => (string)$this->credential('access_token'),
         ]));

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use DrAliRagab\Socialize\Exceptions\ApiException;
+use DrAliRagab\Socialize\Exceptions\InvalidConfigException;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\Facades\Socialize;
 use Illuminate\Http\Client\Request;
@@ -82,6 +83,12 @@ it('deletes instagram post', function (): void {
     expect(Socialize::instagram()->delete('179123'))->toBeTrue();
 });
 
+it('throws for empty instagram post id on delete', function (): void {
+    Http::fake();
+
+    Socialize::instagram()->delete('   ');
+})->throws(InvalidSharePayloadException::class, 'Instagram post id cannot be empty');
+
 it('fails instagram share with invalid url', function (): void {
     Http::fake();
 
@@ -93,6 +100,19 @@ it('fails instagram share without media', function (): void {
 
     Socialize::instagram()->message('Only text')->share();
 })->throws(InvalidSharePayloadException::class, 'requires imageUrl or videoUrl when carousel is not used');
+
+it('fails instagram share with empty payload', function (): void {
+    Http::fake();
+
+    Socialize::instagram()->share();
+})->throws(InvalidSharePayloadException::class, 'requires imageUrl, videoUrl, or carousel items');
+
+it('fails instagram share when required credentials are missing', function (): void {
+    Http::fake();
+    config()->set('socialize.providers.instagram.profiles.default.access_token');
+
+    Socialize::instagram()->imageUrl('https://cdn.example.com/ig.jpg')->share();
+})->throws(InvalidConfigException::class, 'Missing required credential [access_token]');
 
 it('fails instagram with invalid media type option', function (): void {
     Http::fake();
@@ -108,7 +128,59 @@ it('throws api exception when instagram publish does not return id', function ()
     Http::fake([
         'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-1'], 200),
         'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['ok' => true], 200),
+        'https://graph.facebook.com/v25.0/container-1*'        => Http::response(['status_code' => 'ERROR', 'status' => 'IN_PROGRESS'], 200),
     ]);
 
     Socialize::instagram()->imageUrl('https://cdn.example.com/ig.jpg')->share();
 })->throws(ApiException::class, 'did not return a media id');
+
+it('throws api exception when instagram publish status query has no status details', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-1'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['ok' => true], 200),
+        'https://graph.facebook.com/v25.0/container-1*'        => Http::response([], 200),
+    ]);
+
+    Socialize::instagram()->imageUrl('https://cdn.example.com/ig.jpg')->share();
+})->throws(ApiException::class, 'Instagram API did not return a media id after publishing.');
+
+it('throws when instagram container creation response has no id', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media' => Http::response(['ok' => true], 200),
+    ]);
+
+    Socialize::instagram()->imageUrl('https://cdn.example.com/ig.jpg')->share();
+})->throws(ApiException::class, 'did not return a container id');
+
+it('throws when instagram carousel child container response has no id', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media' => Http::response(['ok' => true], 200),
+    ]);
+
+    Socialize::instagram()
+        ->message('Carousel')
+        ->carousel([
+            'https://cdn.example.com/1.jpg',
+            'https://cdn.example.com/2.jpg',
+        ])
+        ->share()
+    ;
+})->throws(ApiException::class, 'did not return a child container id');
+
+it('throws when instagram carousel parent container response has no id', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media' => Http::sequence()
+            ->push(['id' => 'child-1'], 200)
+            ->push(['id' => 'child-2'], 200)
+            ->push(['ok' => true], 200),
+    ]);
+
+    Socialize::instagram()
+        ->message('Carousel')
+        ->carousel([
+            'https://cdn.example.com/1.jpg',
+            'https://cdn.example.com/2.jpg',
+        ])
+        ->share()
+    ;
+})->throws(ApiException::class, 'did not return a parent carousel container id');

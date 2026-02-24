@@ -9,7 +9,7 @@ Unified social media publishing for Laravel applications.
 - LinkedIn
 
 ## Requirements
-- PHP 8.2+
+- PHP 8.4+
 - Laravel 11 or 12
 
 ## Installation
@@ -121,9 +121,41 @@ Minimal example:
 ],
 ```
 
+### Required `.env` Variables
+
+General:
+- `SOCIALIZE_DEFAULT_PROFILE` (optional, default: `default`)
+- `SOCIALIZE_HTTP_TIMEOUT` (optional)
+- `SOCIALIZE_HTTP_CONNECT_TIMEOUT` (optional)
+- `SOCIALIZE_HTTP_RETRIES` (optional)
+- `SOCIALIZE_HTTP_RETRY_SLEEP_MS` (optional)
+
+Facebook:
+- `SOCIALIZE_FACEBOOK_PAGE_ID` (required)
+- `SOCIALIZE_FACEBOOK_ACCESS_TOKEN` (required)
+- `SOCIALIZE_FACEBOOK_GRAPH_VERSION` (optional, default: `v25.0`)
+- `SOCIALIZE_FACEBOOK_BASE_URL` (optional)
+
+Instagram:
+- `SOCIALIZE_INSTAGRAM_IG_ID` (required)
+- `SOCIALIZE_INSTAGRAM_ACCESS_TOKEN` (required)
+- `SOCIALIZE_INSTAGRAM_GRAPH_VERSION` (optional, default: `v25.0`)
+- `SOCIALIZE_INSTAGRAM_BASE_URL` (optional)
+
+X (Twitter):
+- `SOCIALIZE_TWITTER_BEARER_TOKEN` (required)
+- `SOCIALIZE_TWITTER_BASE_URL` (optional)
+
+LinkedIn:
+- `SOCIALIZE_LINKEDIN_AUTHOR` (required)
+- `SOCIALIZE_LINKEDIN_ACCESS_TOKEN` (required)
+- `SOCIALIZE_LINKEDIN_VERSION` (optional, default: `202602`, format: `YYYYMM`)
+- `SOCIALIZE_LINKEDIN_BASE_URL` (optional)
+
 ## Platform Notes
 - Facebook/Instagram use Graph API versioning from config.
 - Instagram content publishing is multi-step (container then publish).
+- Instagram publish failure troubleshooting uses `GET /{container-id}?fields=status_code,status`.
 - X media uploads should be done before publish; pass media IDs to `mediaId/mediaIds`.
 - LinkedIn requires `Linkedin-Version` and `X-Restli-Protocol-Version` headers.
 

@@ -7,6 +7,7 @@ namespace DrAliRagab\Socialize\Providers;
 use DrAliRagab\Socialize\Contracts\ProviderDriver;
 use DrAliRagab\Socialize\Enums\Provider;
 use DrAliRagab\Socialize\Exceptions\ApiException;
+use DrAliRagab\Socialize\Exceptions\InvalidConfigException;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\ValueObjects\SharePayload;
 use DrAliRagab\Socialize\ValueObjects\ShareResult;
@@ -40,13 +41,25 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
 
         $visibility   = $sharePayload->option('visibility', 'PUBLIC');
         $distribution = $sharePayload->option('distribution', 'MAIN_FEED');
+        $visibility   = mb_strtoupper(mb_trim(is_string($visibility) ? $visibility : 'PUBLIC'));
+        $distribution = mb_strtoupper(mb_trim(is_string($distribution) ? $distribution : 'MAIN_FEED'));
+
+        if ($visibility === '')
+        {
+            throw new InvalidSharePayloadException('LinkedIn visibility cannot be empty.');
+        }
+
+        if ($distribution === '')
+        {
+            throw new InvalidSharePayloadException('LinkedIn distribution cannot be empty.');
+        }
 
         $payloadBody = [
             'author'       => $this->credential('author'),
             'commentary'   => $this->buildCommentary($sharePayload),
-            'visibility'   => mb_strtoupper(is_string($visibility) ? $visibility : 'PUBLIC'),
+            'visibility'   => $visibility,
             'distribution' => [
-                'feedDistribution'               => mb_strtoupper(is_string($distribution) ? $distribution : 'MAIN_FEED'),
+                'feedDistribution'               => $distribution,
                 'targetEntities'                 => [],
                 'thirdPartyDistributionChannels' => [],
             ],
@@ -97,7 +110,15 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
 
     public function delete(string $postId): bool
     {
-        $encodedId = rawurlencode(mb_trim($postId));
+        $this->requireCredentials('access_token');
+        $postId = mb_trim($postId);
+
+        if ($postId === '')
+        {
+            throw new InvalidSharePayloadException('LinkedIn post id cannot be empty.');
+        }
+
+        $encodedId = rawurlencode($postId);
         $response  = $this->send('DELETE', sprintf('/rest/posts/%s', $encodedId), [], $this->headers());
 
         if ($response->status() === 204)
@@ -138,7 +159,17 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
     {
         $version = $this->credential('version');
 
-        return $version ?? '202602';
+        if ($version === null)
+        {
+            return '202602';
+        }
+
+        if (preg_match('/^\d{6}$/', $version) !== 1)
+        {
+            throw new InvalidConfigException('LinkedIn version must use YYYYMM format.');
+        }
+
+        return $version;
     }
 
     private function buildCommentary(SharePayload $sharePayload): string

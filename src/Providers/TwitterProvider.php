@@ -104,7 +104,15 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
 
     public function delete(string $postId): bool
     {
-        $response = $this->decode($this->send('DELETE', sprintf('/2/tweets/%s', mb_trim($postId)), [], $this->headers()));
+        $this->requireCredentials('bearer_token');
+        $postId = mb_trim($postId);
+
+        if ($postId === '')
+        {
+            throw new InvalidSharePayloadException('X post id cannot be empty.');
+        }
+
+        $response = $this->decode($this->send('DELETE', sprintf('/2/tweets/%s', $postId), [], $this->headers()));
         $data     = $response['data'] ?? null;
 
         return (bool)(is_array($data) ? ($data['deleted'] ?? false) : false);

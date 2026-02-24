@@ -115,9 +115,10 @@ it('resolves credentials and validates required credentials', function (): void 
 })->throws(InvalidConfigException::class, 'Missing required credential [missing]');
 
 it('returns configured graph version or default', function (): void {
-    $configured = makeBaseProviderStub(['graph_version' => 'v77.0']);
+    $configured = makeBaseProviderStub(['graph_version' => ' v77.0 ']);
     $default    = makeBaseProviderStub();
 
     expect($configured->callGraphVersion())->toBe('v77.0')
-        ->and($default->callGraphVersion())->toBe('v25.0');
+        ->and($default->callGraphVersion())->toBe('v25.0')
+    ;
 });

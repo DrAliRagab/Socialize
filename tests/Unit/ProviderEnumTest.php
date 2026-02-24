@@ -9,6 +9,7 @@ it('resolves provider aliases correctly', function (): void {
         ->and(Provider::fromString('ig'))->toBe(Provider::Instagram)
         ->and(Provider::fromString('x'))->toBe(Provider::Twitter)
         ->and(Provider::fromString('li'))->toBe(Provider::LinkedIn)
+        ->and(Provider::fromString('  LINKEDIN  '))->toBe(Provider::LinkedIn)
     ;
 });
 

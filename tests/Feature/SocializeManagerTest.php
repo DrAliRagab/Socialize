@@ -28,3 +28,18 @@ it('throws when provider config is missing', function (): void {
 it('throws when profile is missing', function (): void {
     app(SocializeManager::class)->facebook('not-found');
 })->throws(InvalidConfigException::class, 'Profile [not-found] is not configured for provider [facebook].');
+
+it('falls back to default profile when profile argument is blank', function (): void {
+    $fluentShare = app(SocializeManager::class)->facebook('   ');
+
+    expect($fluentShare)->toBeInstanceOf(FluentShare::class);
+});
+
+it('falls back to literal default profile when configured defaults are blank', function (): void {
+    config()->set('socialize.default_profile', '   ');
+    config()->set('socialize.providers.facebook.default_profile', '   ');
+
+    $fluentShare = app(SocializeManager::class)->facebook('   ');
+
+    expect($fluentShare)->toBeInstanceOf(FluentShare::class);
+});
