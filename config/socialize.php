@@ -6,8 +6,8 @@ return [
     'default_profile' => env('SOCIALIZE_DEFAULT_PROFILE', 'default'),
 
     'http' => [
-        'timeout'         => (int)env('SOCIALIZE_HTTP_TIMEOUT', 15),
-        'connect_timeout' => (int)env('SOCIALIZE_HTTP_CONNECT_TIMEOUT', 10),
+        'timeout'         => (int)env('SOCIALIZE_HTTP_TIMEOUT', 120),
+        'connect_timeout' => (int)env('SOCIALIZE_HTTP_CONNECT_TIMEOUT', 30),
         'retries'         => (int)env('SOCIALIZE_HTTP_RETRIES', 1),
         'retry_sleep_ms'  => (int)env('SOCIALIZE_HTTP_RETRY_SLEEP_MS', 150),
     ],
