@@ -1,8 +1,10 @@
-build
+/vendor
+/.phpunit.cache
+/.phpunit.result.cache
+/build
+/coverage
+/.rector
+/rector.cache
+/.idea
+/.vscode
 composer.lock
-docs
-vendor
-coverage
-.phpunit.result.cache
-.idea/
-.vscode

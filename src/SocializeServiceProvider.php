@@ -1,25 +1,26 @@
 <?php
 
+declare(strict_types=1);
+
 namespace DrAliRagab\Socialize;
 
-use DrAliRagab\Socialize\Commands\SocializeCommand;
+use Illuminate\Contracts\Config\Repository;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
-class SocializeServiceProvider extends PackageServiceProvider
+final class SocializeServiceProvider extends PackageServiceProvider
 {
     public function configurePackage(Package $package): void
     {
-        /*
-         * This class is a Package Service Provider
-         *
-         * More info: https://github.com/spatie/laravel-package-tools
-         */
         $package
             ->name('socialize')
-            ->hasConfigFile();
-        // ->hasViews()
-        // ->hasMigration('create_socialize_table')
-        // ->hasCommand(SocializeCommand::class);
+            ->hasConfigFile()
+        ;
+    }
+
+    public function packageRegistered(): void
+    {
+        $this->app->singleton(SocializeManager::class, fn (): SocializeManager => new SocializeManager($this->app->make(Repository::class)));
+        $this->app->alias(SocializeManager::class, 'socialize');
     }
 }

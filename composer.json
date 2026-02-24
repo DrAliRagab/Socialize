@@ -1,64 +1,65 @@
 {
     "name": "draliragab/socialize",
-    "description": "Socialize your Laravel project easily",
+    "description": "Unified Laravel social media publishing for Facebook, Instagram, X, and LinkedIn.",
     "keywords": [
         "laravel",
-        "socialize",
         "social",
-        "social media",
-        "api",
-        "integration",
-        "twitter",
         "facebook",
-        "instagram"
+        "instagram",
+        "twitter",
+        "x",
+        "linkedin"
     ],
-    "homepage": "https://github.com/draliragab/socialize",
+    "homepage": "https://github.com/DrAliRagab/Socialize",
     "license": "MIT",
     "authors": [
         {
             "name": "Ali Ragab",
-            "email": "Dr.aliragab@gmail.com",
+            "email": "Dr.AliRagab@gmail.com",
             "role": "Developer"
         }
     ],
     "require": {
         "php": "^8.2",
-        "abraham/twitteroauth": "^8.0",
-        "spatie/laravel-package-tools": "^1.0"
+        "illuminate/contracts": "^11.0|^12.0",
+        "illuminate/http": "^11.0|^12.0",
+        "illuminate/support": "^11.0|^12.0",
+        "spatie/laravel-package-tools": "^1.16"
     },
     "require-dev": {
-        "laravel/pint": "^1.0",
+        "larastan/larastan": "^3.9",
+        "laravel/pint": "^1.27",
         "nunomaduro/collision": "^8.0",
-        "larastan/larastan": "^3.0",
         "orchestra/testbench": "^10.0",
         "pestphp/pest": "^4.0",
         "pestphp/pest-plugin-laravel": "^4.0",
-        "phpstan/extension-installer": "^1.1",
+        "phpstan/extension-installer": "^1.4",
+        "phpstan/phpstan": "^2.1",
         "phpstan/phpstan-deprecation-rules": "^2.0",
         "phpstan/phpstan-phpunit": "^2.0",
-        "phpunit/phpunit": "^12",
-        "phpcompatibility/php-compatibility": "*"
+        "phpunit/phpunit": "^12.0",
+        "rector/rector": "^2.3",
+        "rector/type-perfect": "^2.1",
+        "tomasvotruba/type-coverage": "^2.1"
     },
     "autoload": {
         "psr-4": {
-            "DrAliRagab\\Socialize\\": "src",
-            "DrAliRagab\\Socialize\\Database\\Factories\\": "database/factories"
+            "DrAliRagab\\Socialize\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "DrAliRagab\\Socialize\\Tests\\": "tests"
+            "DrAliRagab\\Socialize\\Tests\\": "tests/"
         }
     },
     "scripts": {
         "post-autoload-dump": "@php ./vendor/bin/testbench package:discover --ansi",
-        "post-install-cmd": "\"vendor/bin/phpcs\" --config-set installed_paths vendor/phpcompatibility/php-compatibility",
-        "post-update-cmd": "\"vendor/bin/phpcs\" --config-set installed_paths vendor/phpcompatibility/php-compatibility",
-        "analyse": "vendor/bin/phpstan analyse --level=5 ./src",
+        "analyse": "vendor/bin/phpstan analyse --ansi --no-progress --debug",
         "test": "vendor/bin/pest",
-        "test-coverage": "vendor/bin/pest --coverage",
+        "test-coverage": "vendor/bin/pest --coverage --min=95",
         "format": "vendor/bin/pint",
-        "compatibility": "vendor/bin/phpcs -p ./src --standard=PHPCompatibility --runtime-set testVersion 8.0-"
+        "rector:default": "vendor/bin/rector process --config rector.default.php --ansi",
+        "rector": "vendor/bin/rector process --config rector.php --ansi"
     },
     "config": {
         "sort-packages": true,
@@ -77,6 +78,6 @@
             }
         }
     },
-    "minimum-stability": "dev",
+    "minimum-stability": "stable",
     "prefer-stable": true
 }

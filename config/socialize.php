@@ -1,35 +1,64 @@
 <?php
 
-// config for DrAliRagab/Socialize
+declare(strict_types=1);
+
 return [
-    'facebook' => [
-        'default' => [
-            'app_id' => env('FACEBOOK_APP_ID'),
-            'graph_version' => env('FACEBOOK_GRAPH_VERSION', 'v15.0'),
-            'page_id' => env('FACEBOOK_PAGE_ID'),
-            'page_access_token' => env('FACEBOOK_PAGE_ACCESS_TOKEN'),
-        ],
-    ],
+    'default_profile' => env('SOCIALIZE_DEFAULT_PROFILE', 'default'),
 
-    'instagram' => [
-        'default' => [
-            'graph_version' => env('INSTAGRAM_GRAPH_VERSION', 'v15.0'),
-            'user_access_token' => env('INSTAGRAM_USER_ACCESS_TOKEN'),
-            'instagram_account_id' => env('INSTAGRAM_ACCOUNT_ID'),
-        ],
-    ],
-
-    'twitter' => [
-        'default' => [
-            'app_consumer_key' => env('TWITTER_CONSUMER_KEY'),
-            'app_consumer_secret' => env('TWITTER_CONSUMER_SECRET'),
-            'account_access_token' => env('TWITTER_ACCOUNT_ACCESS_TOKEN'),
-            'account_access_token_secret' => env('TWITTER_ACCOUNT_ACCESS_TOKEN_SECRET'),
-        ],
+    'http' => [
+        'timeout'         => (int)env('SOCIALIZE_HTTP_TIMEOUT', 15),
+        'connect_timeout' => (int)env('SOCIALIZE_HTTP_CONNECT_TIMEOUT', 10),
+        'retries'         => (int)env('SOCIALIZE_HTTP_RETRIES', 1),
+        'retry_sleep_ms'  => (int)env('SOCIALIZE_HTTP_RETRY_SLEEP_MS', 150),
     ],
 
     'model_columns' => [
-        'message_column' => 'title',
-        'photo_column' => 'image',
+        'message' => env('SOCIALIZE_MODEL_MESSAGE_COLUMN', 'title'),
+        'link'    => env('SOCIALIZE_MODEL_LINK_COLUMN', 'url'),
+        'image'   => env('SOCIALIZE_MODEL_IMAGE_COLUMN', 'image'),
+    ],
+
+    'providers' => [
+        'facebook' => [
+            'base_url'      => env('SOCIALIZE_FACEBOOK_BASE_URL', 'https://graph.facebook.com'),
+            'graph_version' => env('SOCIALIZE_FACEBOOK_GRAPH_VERSION', 'v25.0'),
+            'profiles'      => [
+                'default' => [
+                    'page_id'      => env('SOCIALIZE_FACEBOOK_PAGE_ID'),
+                    'access_token' => env('SOCIALIZE_FACEBOOK_ACCESS_TOKEN'),
+                ],
+            ],
+        ],
+
+        'instagram' => [
+            'base_url'      => env('SOCIALIZE_INSTAGRAM_BASE_URL', 'https://graph.facebook.com'),
+            'graph_version' => env('SOCIALIZE_INSTAGRAM_GRAPH_VERSION', 'v25.0'),
+            'profiles'      => [
+                'default' => [
+                    'ig_id'        => env('SOCIALIZE_INSTAGRAM_IG_ID'),
+                    'access_token' => env('SOCIALIZE_INSTAGRAM_ACCESS_TOKEN'),
+                ],
+            ],
+        ],
+
+        'twitter' => [
+            'base_url' => env('SOCIALIZE_TWITTER_BASE_URL', 'https://api.x.com'),
+            'profiles' => [
+                'default' => [
+                    'bearer_token' => env('SOCIALIZE_TWITTER_BEARER_TOKEN'),
+                ],
+            ],
+        ],
+
+        'linkedin' => [
+            'base_url' => env('SOCIALIZE_LINKEDIN_BASE_URL', 'https://api.linkedin.com'),
+            'profiles' => [
+                'default' => [
+                    'author'       => env('SOCIALIZE_LINKEDIN_AUTHOR'),
+                    'access_token' => env('SOCIALIZE_LINKEDIN_ACCESS_TOKEN'),
+                    'version'      => env('SOCIALIZE_LINKEDIN_VERSION', '202602'),
+                ],
+            ],
+        ],
     ],
 ];
