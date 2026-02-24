@@ -23,6 +23,7 @@ it('shares a linkedin post with commentary and link', function (): void {
     ;
 
     expect($shareResult->id())->toBe('urn:li:share:1');
+    expect($shareResult->url())->toBe('https://www.linkedin.com/feed/update/urn:li:share:1/');
 
     Http::assertSent(fn (Request $request): bool => $request->hasHeader('Linkedin-Version', '202602')
         && $request->hasHeader('X-Restli-Protocol-Version', '2.0.0')
@@ -57,7 +58,9 @@ it('shares linkedin post with media urn only', function (): void {
         ->share()
     ;
 
-    expect($shareResult->id())->toBe('urn:li:share:2');
+    expect($shareResult->id())->toBe('urn:li:share:2')
+        ->and($shareResult->url())->toBe('https://www.linkedin.com/feed/update/urn:li:share:2/')
+    ;
 });
 
 it('deletes linkedin post', function (): void {
@@ -144,6 +147,22 @@ it('uses fallback article title when sharing linkedin link without a message', f
     expect($shareResult->id())->toBe('urn:li:share:fallback-title');
 
     Http::assertSent(fn (Request $request): bool => ($request->data()['content']['article']['title'] ?? null) === 'Shared link');
+});
+
+it('prefers linkedin permalink from API body when available', function (): void {
+    Http::fake([
+        'https://api.linkedin.com/rest/posts' => Http::response([
+            'id'        => 'urn:li:share:from-body',
+            'permalink' => 'https://www.linkedin.com/feed/update/urn:li:share:from-api/',
+        ], 201),
+    ]);
+
+    $shareResult = Socialize::linkedin()
+        ->message('Permalink')
+        ->share()
+    ;
+
+    expect($shareResult->url())->toBe('https://www.linkedin.com/feed/update/urn:li:share:from-api/');
 });
 
 it('throws when linkedin required credentials are missing', function (): void {

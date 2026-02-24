@@ -19,6 +19,7 @@ use function is_string;
 use const PHP_EOL;
 
 use function sprintf;
+use function str_starts_with;
 
 final class LinkedInProvider extends BaseProvider implements ProviderDriver
 {
@@ -104,7 +105,7 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
         return new ShareResult(
             provider: $this->provider(),
             id: $id,
-            url: null,
+            url: $this->resolvePostUrl($id, $body),
             raw: $body,
         );
     }
@@ -215,5 +216,28 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
         }
 
         return 'Shared link';
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     */
+    private function resolvePostUrl(string $id, array $body): ?string
+    {
+        $permalink = $body['permalink'] ?? $body['url'] ?? null;
+
+        if (is_string($permalink) && mb_trim($permalink) !== '')
+        {
+            return mb_trim($permalink);
+        }
+
+        if (
+            str_starts_with($id, 'urn:li:share:')
+            || str_starts_with($id, 'urn:li:ugcPost:')
+            || str_starts_with($id, 'urn:li:activity:')
+        ) {
+            return sprintf('https://www.linkedin.com/feed/update/%s/', $id);
+        }
+
+        return null;
     }
 }
