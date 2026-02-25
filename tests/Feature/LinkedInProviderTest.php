@@ -425,6 +425,29 @@ it('prefers explicit linkedin media URN and does not auto upload when both are p
     Http::assertNotSent(fn (Request $request): bool => $request->url() === 'https://api.linkedin.com/rest/images?action=initializeUpload');
 });
 
+it('keeps linkedin article and media blocks when both link and media are provided', function (): void {
+    Http::fake([
+        'https://api.linkedin.com/rest/posts' => Http::response(['id' => 'urn:li:share:link-media'], 201),
+    ]);
+
+    $shareResult = Socialize::linkedin()
+        ->message('Link and media')
+        ->link('https://example.com/article', 'Article title')
+        ->mediaUrn('urn:li:image:abc')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('urn:li:share:link-media');
+
+    Http::assertSent(function (Request $request): bool {
+        $content = $request->data()['content'] ?? [];
+
+        return ($content['article']['source'] ?? null) === 'https://example.com/article'
+            && ($content['article']['title'] ?? null)  === 'Article title'
+            && ($content['media']['id'] ?? null)       === 'urn:li:image:abc';
+    });
+});
+
 it('deletes linkedin post', function (): void {
     Http::fake([
         'https://api.linkedin.com/rest/posts/*' => Http::response('', 204),
@@ -824,6 +847,92 @@ it('throws when linkedin video status indicates processing failure', function ()
     ;
 })->throws(ApiException::class, 'processing failed');
 
+it('throws when linkedin video processing does not reach available state before timeout', function (): void {
+    config()->set('socialize.providers.linkedin.video_status_poll_attempts', 2);
+    config()->set('socialize.providers.linkedin.video_status_poll_sleep_seconds', 0);
+
+    Http::fake([
+        'https://cdn.example.com/*'                                    => Http::response('video-binary', 200, ['Content-Type' => 'video/mp4']),
+        'https://api.linkedin.com/rest/videos?action=initializeUpload' => Http::response([
+            'value' => [
+                'video'              => 'urn:li:video:timed-out',
+                'uploadToken'        => 'token',
+                'uploadInstructions' => [
+                    ['uploadUrl' => 'https://upload.linkedin.com/timed-out', 'firstByte' => 0, 'lastByte' => 4],
+                ],
+            ],
+        ], 200),
+        'https://upload.linkedin.com/timed-out'                             => Http::response('', 201, ['ETag' => '"etag-timeout"']),
+        'https://api.linkedin.com/rest/videos?action=finalizeUpload'        => Http::response(['value' => ['success' => true]], 200),
+        'https://api.linkedin.com/rest/videos/urn%3Ali%3Avideo%3Atimed-out' => Http::response(['status' => 'PROCESSING'], 200),
+    ]);
+
+    Socialize::linkedin()
+        ->media('https://cdn.example.com/timed-out.mp4', 'video')
+        ->share()
+    ;
+})->throws(ApiException::class, 'processing timed out');
+
+it('parses linkedin video status polling settings from numeric strings', function (): void {
+    config()->set('socialize.providers.linkedin.video_status_poll_attempts', '2');
+    config()->set('socialize.providers.linkedin.video_status_poll_sleep_seconds', '1');
+
+    Http::fake([
+        'https://cdn.example.com/*'                                    => Http::response('video-binary', 200, ['Content-Type' => 'video/mp4']),
+        'https://api.linkedin.com/rest/videos?action=initializeUpload' => Http::response([
+            'value' => [
+                'video'              => 'urn:li:video:string-config',
+                'uploadToken'        => 'token',
+                'uploadInstructions' => [
+                    ['uploadUrl' => 'https://upload.linkedin.com/string-config', 'firstByte' => 0, 'lastByte' => 4],
+                ],
+            ],
+        ], 200),
+        'https://upload.linkedin.com/string-config'                             => Http::response('', 201, ['ETag' => '"etag-string-config"']),
+        'https://api.linkedin.com/rest/videos?action=finalizeUpload'            => Http::response(['value' => ['success' => true]], 200),
+        'https://api.linkedin.com/rest/videos/urn%3Ali%3Avideo%3Astring-config' => Http::sequence()
+            ->push(['status' => 'PROCESSING'], 200)
+            ->push(['status' => 'AVAILABLE'], 200),
+        'https://api.linkedin.com/rest/posts' => Http::response(['id' => 'urn:li:share:string-config'], 201),
+    ]);
+
+    $shareResult = Socialize::linkedin()
+        ->media('https://cdn.example.com/string-config.mp4', 'video')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('urn:li:share:string-config');
+});
+
+it('falls back to default linkedin polling settings when configured values are invalid', function (): void {
+    config()->set('socialize.providers.linkedin.video_status_poll_attempts', 'invalid');
+    config()->set('socialize.providers.linkedin.video_status_poll_sleep_seconds', 'invalid');
+
+    Http::fake([
+        'https://cdn.example.com/*'                                    => Http::response('video-binary', 200, ['Content-Type' => 'video/mp4']),
+        'https://api.linkedin.com/rest/videos?action=initializeUpload' => Http::response([
+            'value' => [
+                'video'              => 'urn:li:video:invalid-config',
+                'uploadToken'        => 'token',
+                'uploadInstructions' => [
+                    ['uploadUrl' => 'https://upload.linkedin.com/invalid-config', 'firstByte' => 0, 'lastByte' => 4],
+                ],
+            ],
+        ], 200),
+        'https://upload.linkedin.com/invalid-config'                             => Http::response('', 201, ['ETag' => '"etag-invalid-config"']),
+        'https://api.linkedin.com/rest/videos?action=finalizeUpload'             => Http::response(['value' => ['success' => true]], 200),
+        'https://api.linkedin.com/rest/videos/urn%3Ali%3Avideo%3Ainvalid-config' => Http::response(['status' => 'AVAILABLE'], 200),
+        'https://api.linkedin.com/rest/posts'                                    => Http::response(['id' => 'urn:li:share:invalid-config'], 201),
+    ]);
+
+    $shareResult = Socialize::linkedin()
+        ->media('https://cdn.example.com/invalid-config.mp4', 'video')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('urn:li:share:invalid-config');
+});
+
 it('returns null linkedin url when id is not a URN and no permalink/url is present', function (): void {
     Http::fake([
         'https://api.linkedin.com/rest/posts' => Http::response(['id' => '123'], 201),
@@ -832,4 +941,19 @@ it('returns null linkedin url when id is not a URN and no permalink/url is prese
     $shareResult = Socialize::linkedin()->message('No URN')->share();
 
     expect($shareResult->url())->toBeNull();
+});
+
+it('resolves linkedin url for ugc post and activity urn ids', function (): void {
+    Http::fake([
+        'https://api.linkedin.com/rest/posts' => Http::sequence()
+            ->push(['id' => 'urn:li:ugcPost:1'], 201)
+            ->push(['id' => 'urn:li:activity:2'], 201),
+    ]);
+
+    $shareResult    = Socialize::linkedin()->message('ugc')->share();
+    $activityResult = Socialize::linkedin()->message('activity')->share();
+
+    expect($shareResult->url())->toBe('https://www.linkedin.com/feed/update/urn:li:ugcPost:1/')
+        ->and($activityResult->url())->toBe('https://www.linkedin.com/feed/update/urn:li:activity:2/')
+    ;
 });

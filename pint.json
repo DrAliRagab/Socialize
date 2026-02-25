@@ -44,11 +44,6 @@
             ]
         },
         "blank_line_between_import_groups": true,
-        "braces": {
-            "position_after_anonymous_constructs": "next",
-            "position_after_control_structures": "next",
-            "position_after_functions_and_oop_constructs": "next"
-        },
         "cast_spaces": {
             "space": "none"
         },
@@ -186,10 +181,6 @@
                 "type",
                 "var",
                 "phpstan-type",
-                "param",
-                "property",
-                "property-read",
-                "property-write",
                 "phpstan-param",
                 "phpstan-property",
                 "phpstan-property-read",

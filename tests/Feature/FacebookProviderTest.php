@@ -25,6 +25,7 @@ it('shares a facebook feed post', function (): void {
 
     expect($shareResult->id())->toBe('fb-1')
         ->and($shareResult->provider()->value)->toBe('facebook')
+        ->and($shareResult->url())->toBe('https://www.facebook.com/fb-1')
     ;
 
     Http::assertSent(
@@ -102,6 +103,46 @@ it('shares a facebook video post', function (): void {
     expect($shareResult->id())->toBe('fb-video');
 
     Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/videos'));
+});
+
+it('applies scheduling and targeting options to facebook photo and video shares', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/*' => Http::sequence()
+            ->push(['post_id' => 'fb-photo-scheduled'], 200)
+            ->push(['id' => 'fb-video-scheduled'], 200),
+    ]);
+
+    Socialize::facebook()
+        ->imageUrl('https://cdn.example.com/photo.jpg')
+        ->scheduledAt(1_772_000_000)
+        ->targeting(['geo_locations' => ['countries' => ['US']]])
+        ->share()
+    ;
+
+    Socialize::facebook()
+        ->videoUrl('https://cdn.example.com/video.mp4')
+        ->scheduledAt(1_772_000_100)
+        ->targeting(['geo_locations' => ['countries' => ['CA']]])
+        ->share()
+    ;
+
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/photos')
+        && ($request->data()['published'] ?? null)                               === false
+        && ($request->data()['scheduled_publish_time'] ?? null)                  === 1_772_000_000
+        && ($request->data()['targeting']['geo_locations']['countries'] ?? null) === ['US']);
+
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/videos')
+        && ($request->data()['published'] ?? null)                               === false
+        && ($request->data()['scheduled_publish_time'] ?? null)                  === 1_772_000_100
+        && ($request->data()['targeting']['geo_locations']['countries'] ?? null) === ['CA']);
+});
+
+it('returns false when facebook delete response indicates logical failure', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/*' => Http::response(['success' => false], 200),
+    ]);
+
+    expect(Socialize::facebook()->delete('123_456'))->toBeFalse();
 });
 
 it('shares facebook media from local image file through temporary URL and cleans it up', function (): void {

@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace DrAliRagab\Socialize\ValueObjects;
 
-use function is_array;
-
 final readonly class SharePayload
 {
     /**
      * @param list<string> $mediaIds
+     * @param list<array{source: string, type: ?string}> $mediaSources
      * @param array<string, mixed> $providerOptions
      * @param array<string, mixed> $metadata
      */
@@ -21,6 +20,7 @@ final readonly class SharePayload
         private array $mediaIds,
         private array $providerOptions,
         private array $metadata,
+        private array $mediaSources = [],
     ) {}
 
     public function message(): ?string
@@ -52,6 +52,14 @@ final readonly class SharePayload
     }
 
     /**
+     * @return list<array{source: string, type: ?string}>
+     */
+    public function mediaSources(): array
+    {
+        return $this->mediaSources;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function providerOptions(): array
@@ -74,13 +82,11 @@ final readonly class SharePayload
 
     public function hasAnyCoreContent(): bool
     {
-        $mediaSources = $this->providerOptions['media_sources'] ?? null;
-
         return ($this->message !== null && $this->message !== '')
             || ($this->link !== null && $this->link !== '')
             || ($this->imageUrl !== null && $this->imageUrl !== '')
             || ($this->videoUrl !== null && $this->videoUrl !== '')
-            || $this->mediaIds !== []
-            || (is_array($mediaSources) && $mediaSources !== []);
+            || $this->mediaIds     !== []
+            || $this->mediaSources !== [];
     }
 }

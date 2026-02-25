@@ -15,3 +15,11 @@ it('converts share result to array', function (): void {
         'raw'      => ['ok' => true],
     ]);
 });
+
+it('is json serializable and arrayable', function (): void {
+    $result = new ShareResult(Provider::LinkedIn, 'urn:li:share:1', null, ['meta' => 'value']);
+
+    expect($result->jsonSerialize())->toBe($result->toArray())
+        ->and(json_decode((string)json_encode($result), true, flags: \JSON_THROW_ON_ERROR))->toBe($result->toArray())
+    ;
+});

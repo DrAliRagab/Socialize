@@ -18,6 +18,7 @@ it('exposes payload values and options', function (): void {
     expect($payload->message())->toBe('Hello')
         ->and($payload->link())->toBe('https://example.com')
         ->and($payload->mediaIds())->toBe(['11', '22'])
+        ->and($payload->mediaSources())->toBe([])
         ->and($payload->providerOptions())->toBe(['published' => true])
         ->and($payload->metadata())->toBe(['source' => 'test'])
         ->and($payload->option('published'))->toBeTrue()
@@ -40,7 +41,7 @@ it('detects empty core content', function (): void {
     expect($payload->hasAnyCoreContent())->toBeFalse();
 });
 
-it('treats provider media sources as core content', function (): void {
+it('does not treat provider option media sources as core content', function (): void {
     $payload = new SharePayload(
         message: null,
         link: null,
@@ -56,6 +57,26 @@ it('treats provider media sources as core content', function (): void {
             ],
         ],
         metadata: [],
+    );
+
+    expect($payload->hasAnyCoreContent())->toBeFalse();
+});
+
+it('treats payload media sources as core content', function (): void {
+    $payload = new SharePayload(
+        message: null,
+        link: null,
+        imageUrl: null,
+        videoUrl: null,
+        mediaIds: [],
+        providerOptions: [],
+        metadata: [],
+        mediaSources: [
+            [
+                'source' => '/tmp/image.jpg',
+                'type'   => 'image',
+            ],
+        ],
     );
 
     expect($payload->hasAnyCoreContent())->toBeTrue();

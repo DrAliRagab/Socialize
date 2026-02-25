@@ -6,7 +6,6 @@ use DrAliRagab\Socialize\Exceptions\ApiException;
 use DrAliRagab\Socialize\Exceptions\InvalidConfigException;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\Facades\Socialize;
-use DrAliRagab\Socialize\Providers\TwitterProvider;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -617,61 +616,6 @@ it('uses fallback x media_id_string from init response when data.id is missing',
     {
         @unlink($videoPath);
     }
-});
-
-it('converts bool/int multipart fields and skips unsupported field types in x upload command internals', function (): void {
-    $provider = new TwitterProvider(
-        providerConfig: ['base_url' => 'https://api.x.com'],
-        credentials: ['bearer_token' => 'x-token'],
-        httpConfig: ['timeout' => 1, 'connect_timeout' => 1, 'retries' => 1, 'retry_sleep_ms' => 1],
-        profile: 'default',
-    );
-
-    Http::fake([
-        'https://api.x.com/2/media/upload' => Http::response(['data' => ['id' => 'm-internal']], 200),
-    ]);
-
-    $reflectionMethod = new ReflectionClass(TwitterProvider::class)->getMethod('uploadCommand');
-
-    /** @var array<string, mixed> $result */
-    $result = $reflectionMethod->invoke($provider, [
-        'command' => 'INIT',
-        'shared'  => false,
-        'count'   => 7,
-        'meta'    => ['ignored' => true],
-    ], null, null);
-
-    expect($result)->toBe(['data' => ['id' => 'm-internal']]);
-
-    Http::assertSent(function (Request $request): bool {
-        if ($request->url() !== 'https://api.x.com/2/media/upload')
-        {
-            return false;
-        }
-
-        $body = $request->body();
-
-        return str_contains($body, 'name="shared"')
-            && str_contains($body, 'false')
-            && str_contains($body, 'name="count"')
-            && str_contains($body, '7')
-            && ! str_contains($body, 'name="meta"');
-    });
-});
-
-it('resolves x media category internals for non-video media', function (): void {
-    $provider = new TwitterProvider(
-        providerConfig: ['base_url' => 'https://api.x.com'],
-        credentials: ['bearer_token' => 'x-token'],
-        httpConfig: ['timeout' => 1, 'connect_timeout' => 1, 'retries' => 1, 'retry_sleep_ms' => 1],
-        profile: 'default',
-    );
-
-    $reflectionMethod = new ReflectionClass(TwitterProvider::class)->getMethod('resolveMediaCategory');
-
-    expect($reflectionMethod->invoke($provider, 'image', 'image/gif'))->toBe('tweet_gif')
-        ->and($reflectionMethod->invoke($provider, 'image', 'image/jpeg'))->toBe('tweet_image')
-    ;
 });
 
 it('continues x share when finalize returns non-pending processing state', function (): void {

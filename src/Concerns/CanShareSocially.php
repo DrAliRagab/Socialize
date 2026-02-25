@@ -19,16 +19,19 @@ trait CanShareSocially
         $messageColumn = config('socialize.model_columns.message', 'title');
         $linkColumn    = config('socialize.model_columns.link', 'url');
         $imageColumn   = config('socialize.model_columns.image', 'image');
+        $videoColumn   = config('socialize.model_columns.video', 'video');
 
         $messageColumn = is_string($messageColumn) ? $messageColumn : 'title';
         $linkColumn    = is_string($linkColumn) ? $linkColumn : 'url';
         $imageColumn   = is_string($imageColumn) ? $imageColumn : 'image';
+        $videoColumn   = is_string($videoColumn) ? $videoColumn : 'video';
 
         return $socializeManager
             ->provider($provider, $profile)
             ->message($this->resolveStringValue($messageColumn))
             ->link($this->resolveStringValue($linkColumn))
             ->imageUrl($this->resolveStringValue($imageColumn))
+            ->videoUrl($this->resolveStringValue($videoColumn))
             ->share()
         ;
     }

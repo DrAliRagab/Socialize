@@ -5,8 +5,13 @@ declare(strict_types=1);
 namespace DrAliRagab\Socialize\ValueObjects;
 
 use DrAliRagab\Socialize\Enums\Provider;
+use Illuminate\Contracts\Support\Arrayable;
+use JsonSerializable;
 
-final readonly class ShareResult
+/**
+ * @implements Arrayable<string, mixed>
+ */
+final readonly class ShareResult implements Arrayable, JsonSerializable
 {
     /**
      * @param array<string, mixed> $raw
@@ -52,5 +57,13 @@ final readonly class ShareResult
             'url'      => $this->url,
             'raw'      => $this->raw,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function jsonSerialize(): array
+    {
+        return $this->toArray();
     }
 }

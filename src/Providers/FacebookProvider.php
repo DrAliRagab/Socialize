@@ -59,6 +59,8 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
                     'url'          => $resolvedImageUrl,
                     'caption'      => $this->buildCaption($sharePayload),
                 ];
+
+                $this->applyPublishingOptions($sharePayload, $data);
             } elseif ($resolvedVideoUrl !== null)
             {
                 $this->ensureUrl($resolvedVideoUrl, 'videoUrl');
@@ -69,6 +71,8 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
                     'file_url'     => $resolvedVideoUrl,
                     'description'  => $this->buildCaption($sharePayload),
                 ];
+
+                $this->applyPublishingOptions($sharePayload, $data);
             } else
             {
                 $endpoint = sprintf('/%s/%s/feed', $version, $pageId);
@@ -88,29 +92,7 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
                     $data['link'] = $sharePayload->link();
                 }
 
-                $published = $sharePayload->option('published');
-
-                if (is_bool($published))
-                {
-                    $data['published'] = $published;
-                }
-
-                $scheduledAt = $sharePayload->option('scheduled_at');
-
-                if (is_int($scheduledAt) || is_string($scheduledAt))
-                {
-                    $data['scheduled_publish_time'] = is_int($scheduledAt)
-                        ? $scheduledAt
-                        : Carbon::parse($scheduledAt)->timestamp;
-                    $data['published'] = false;
-                }
-
-                $targeting = $sharePayload->option('targeting');
-
-                if (is_array($targeting) && $targeting !== [])
-                {
-                    $data['targeting'] = $targeting;
-                }
+                $this->applyPublishingOptions($sharePayload, $data);
             }
 
             $response = $this->decode($this->send('POST', $endpoint, $data));
@@ -124,7 +106,7 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
             return new ShareResult(
                 provider: $this->provider(),
                 id: $id,
-                url: sprintf('https://facebook.com/%s', $id),
+                url: sprintf('https://www.facebook.com/%s', $id),
                 raw: $response,
             );
         } finally
@@ -181,6 +163,36 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
         if ($value === null || filter_var($value, FILTER_VALIDATE_URL) === false)
         {
             throw new InvalidSharePayloadException(sprintf('Facebook %s must be a valid URL.', $field));
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function applyPublishingOptions(SharePayload $sharePayload, array &$data): void
+    {
+        $published = $sharePayload->option('published');
+
+        if (is_bool($published))
+        {
+            $data['published'] = $published;
+        }
+
+        $scheduledAt = $sharePayload->option('scheduled_at');
+
+        if (is_int($scheduledAt) || is_string($scheduledAt))
+        {
+            $data['scheduled_publish_time'] = is_int($scheduledAt)
+                ? $scheduledAt
+                : Carbon::parse($scheduledAt)->timestamp;
+            $data['published'] = false;
+        }
+
+        $targeting = $sharePayload->option('targeting');
+
+        if (is_array($targeting) && $targeting !== [])
+        {
+            $data['targeting'] = $targeting;
         }
     }
 

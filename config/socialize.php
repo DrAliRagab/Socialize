@@ -18,10 +18,20 @@ return [
         'visibility' => env('SOCIALIZE_TEMP_MEDIA_VISIBILITY', 'public'),
     ],
 
+    'strict_option_keys' => (bool)env('SOCIALIZE_STRICT_OPTION_KEYS', true),
+
     'model_columns' => [
         'message' => env('SOCIALIZE_MODEL_MESSAGE_COLUMN', 'title'),
         'link'    => env('SOCIALIZE_MODEL_LINK_COLUMN', 'url'),
         'image'   => env('SOCIALIZE_MODEL_IMAGE_COLUMN', 'image'),
+        'video'   => env('SOCIALIZE_MODEL_VIDEO_COLUMN', 'video'),
+    ],
+
+    'drivers' => [
+        'facebook'  => env('SOCIALIZE_FACEBOOK_DRIVER', DrAliRagab\Socialize\Providers\FacebookProvider::class),
+        'instagram' => env('SOCIALIZE_INSTAGRAM_DRIVER', DrAliRagab\Socialize\Providers\InstagramProvider::class),
+        'twitter'   => env('SOCIALIZE_TWITTER_DRIVER', DrAliRagab\Socialize\Providers\TwitterProvider::class),
+        'linkedin'  => env('SOCIALIZE_LINKEDIN_DRIVER', DrAliRagab\Socialize\Providers\LinkedInProvider::class),
     ],
 
     'providers' => [
@@ -59,8 +69,10 @@ return [
         ],
 
         'linkedin' => [
-            'base_url' => env('SOCIALIZE_LINKEDIN_BASE_URL', 'https://api.linkedin.com'),
-            'profiles' => [
+            'base_url'                        => env('SOCIALIZE_LINKEDIN_BASE_URL', 'https://api.linkedin.com'),
+            'video_status_poll_attempts'      => (int)env('SOCIALIZE_LINKEDIN_VIDEO_STATUS_POLL_ATTEMPTS', 20),
+            'video_status_poll_sleep_seconds' => (int)env('SOCIALIZE_LINKEDIN_VIDEO_STATUS_POLL_SLEEP_SECONDS', 2),
+            'profiles'                        => [
                 'default' => [
                     'author'       => env('SOCIALIZE_LINKEDIN_AUTHOR'),
                     'access_token' => env('SOCIALIZE_LINKEDIN_ACCESS_TOKEN'),

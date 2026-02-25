@@ -6,4 +6,4 @@ namespace DrAliRagab\Socialize\Exceptions;
 
 use RuntimeException;
 
-class SocializeException extends RuntimeException {}
+abstract class SocializeException extends RuntimeException {}

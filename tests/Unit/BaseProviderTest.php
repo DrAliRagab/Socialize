@@ -8,14 +8,30 @@ use DrAliRagab\Socialize\Exceptions\InvalidConfigException;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\Providers\BaseProvider;
 use DrAliRagab\Socialize\ValueObjects\SharePayload;
+use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
+use Ramsey\Uuid\Uuid;
+use Ramsey\Uuid\UuidInterface;
 
-function makeBaseProviderStub(array $providerConfig = [], array $credentials = ['token' => ' abc ']): object
+function makeBaseProviderStub(array $providerConfig = [], array $credentials = ['token' => ' abc '], array $httpConfig = []): object
 {
-    return new class($providerConfig, $credentials, ['timeout' => 1, 'connect_timeout' => 1, 'retries' => 1, 'retry_sleep_ms' => 1], 'default') extends BaseProvider {
+    $resolvedHttpConfig = array_replace_recursive([
+        'timeout'         => 1,
+        'connect_timeout' => 1,
+        'retries'         => 1,
+        'retry_sleep_ms'  => 1,
+        'temporary_media' => [
+            'disk'       => 'public',
+            'directory'  => 'socialize-temp',
+            'visibility' => 'public',
+        ],
+    ], $httpConfig);
+
+    return new class($providerConfig, $credentials, $resolvedHttpConfig, 'default') extends BaseProvider {
         public function callSend(string $method, string $path, array $data = [], array $headers = []): Response
         {
             return $this->send($method, $path, $data, $headers);
@@ -68,6 +84,16 @@ function makeBaseProviderStub(array $providerConfig = [], array $credentials = [
             return $this->loadBinaryMediaSource($source);
         }
 
+        public function callSendBinary(string $method, string $url, string $contents, string $contentType, array $headers = []): Response
+        {
+            return $this->sendBinary($method, $url, $contents, $contentType, $headers);
+        }
+
+        public function callSendMultipart(string $method, string $url, array $fields, array $headers = [], ?array $attachment = null): Response
+        {
+            return $this->sendMultipart($method, $url, $fields, $headers, $attachment);
+        }
+
         public function callInferMediaType(string $source, ?string $typeHint = null, ?string $mimeType = null): string
         {
             return $this->inferMediaType($source, $typeHint, $mimeType);
@@ -110,6 +136,46 @@ it('supports all configured HTTP verbs in base provider', function (): void {
         ->and($provider->callSend('DELETE', '/three')->status())->toBe(200)
         ->and($provider->callSend('PUT', '/four')->status())->toBe(200)
         ->and($provider->callSend('PATCH', '/five')->status())->toBe(200)
+    ;
+});
+
+it('supports binary and multipart request helpers in base provider', function (): void {
+    Http::fake([
+        'https://upload.example.com/binary'    => Http::response(['ok' => true], 200),
+        'https://upload.example.com/multipart' => Http::response(['ok' => true], 200),
+    ]);
+
+    $provider = makeBaseProviderStub();
+
+    expect($provider->callSendBinary('PUT', 'https://upload.example.com/binary', 'bytes', 'application/octet-stream')->status())->toBe(200)
+        ->and($provider->callSendMultipart(
+            'POST',
+            'https://upload.example.com/multipart',
+            ['a' => 1, 'b' => true, 'c' => 'text', 'd' => ['skip']],
+            [],
+            ['name' => 'media', 'contents' => 'binary', 'filename' => 'media.bin'],
+        )->status())->toBe(200)
+    ;
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://upload.example.com/multipart'
+        && str_contains($request->body(), 'name="a"')
+        && str_contains($request->body(), '1')
+        && str_contains($request->body(), 'name="b"')
+        && str_contains($request->body(), 'true')
+        && ! str_contains($request->body(), 'name="d"'));
+});
+
+it('wraps binary and multipart helper request exceptions as api exceptions', function (): void {
+    Http::fake(fn (): mixed => throw new RuntimeException('transport exploded'));
+
+    $provider = makeBaseProviderStub();
+
+    expect(fn (): mixed => $provider->callSendBinary('PUT', 'https://upload.example.com/binary', 'bytes', 'application/octet-stream'))
+        ->toThrow(ApiException::class, 'request failed before receiving a valid response')
+    ;
+
+    expect(fn (): mixed => $provider->callSendMultipart('POST', 'https://upload.example.com/multipart', ['command' => 'INIT']))
+        ->toThrow(ApiException::class, 'request failed before receiving a valid response')
     ;
 });
 
@@ -191,11 +257,57 @@ it('normalizes and deduplicates media sources from payload', function (): void {
     ]);
 });
 
+it('ignores blank structured media sources while merging payload media inputs', function (): void {
+    $provider = makeBaseProviderStub();
+
+    $payload = new SharePayload(
+        message: null,
+        link: null,
+        imageUrl: null,
+        videoUrl: null,
+        mediaIds: [],
+        providerOptions: [],
+        metadata: [],
+        mediaSources: [
+            ['source' => '   ', 'type' => 'image'],
+            ['source' => 'https://cdn.example.com/structured.jpg', 'type' => 'IMAGE'],
+        ],
+    );
+
+    expect($provider->callMediaSourcesFromPayload($payload))->toBe([
+        ['source' => 'https://cdn.example.com/structured.jpg', 'type' => 'image'],
+    ]);
+});
+
+it('merges structured payload media sources with legacy option media sources', function (): void {
+    $provider = makeBaseProviderStub();
+
+    $payload = new SharePayload(
+        message: null,
+        link: null,
+        imageUrl: null,
+        videoUrl: null,
+        mediaIds: [],
+        providerOptions: [
+            'media_sources' => [
+                ['source' => 'https://cdn.example.com/legacy.jpg', 'type' => 'image'],
+            ],
+        ],
+        metadata: [],
+        mediaSources: [
+            ['source' => 'https://cdn.example.com/structured.jpg', 'type' => 'image'],
+            ['source' => 'https://cdn.example.com/legacy.jpg', 'type' => 'image'],
+        ],
+    );
+
+    expect($provider->callMediaSourcesFromPayload($payload))->toBe([
+        ['source' => 'https://cdn.example.com/structured.jpg', 'type' => 'image'],
+        ['source' => 'https://cdn.example.com/legacy.jpg', 'type' => 'image'],
+    ]);
+});
+
 it('creates and cleans temporary public url for local media', function (): void {
     Storage::fake('public');
-    config()->set('socialize.temporary_media.disk', 'public');
-    config()->set('socialize.temporary_media.directory', 'socialize-temp');
-    config()->set('socialize.temporary_media.visibility', 'public');
 
     $tempFile = tempnam(sys_get_temp_dir(), 'socialize-base-temp-');
 
@@ -227,7 +339,13 @@ it('creates and cleans temporary public url for local media', function (): void 
 });
 
 it('throws config exceptions for invalid temporary media config types', function (): void {
-    $provider = makeBaseProviderStub();
+    $provider = makeBaseProviderStub(httpConfig: [
+        'temporary_media' => [
+            'disk'       => [],
+            'directory'  => 'socialize-temp',
+            'visibility' => 'public',
+        ],
+    ]);
     $tempFile = tempnam(sys_get_temp_dir(), 'socialize-base-config-');
 
     if (! \is_string($tempFile))
@@ -236,8 +354,6 @@ it('throws config exceptions for invalid temporary media config types', function
     }
 
     file_put_contents($tempFile, 'test');
-
-    config()->set('socialize.temporary_media.disk', []);
 
     try
     {
@@ -249,7 +365,6 @@ it('throws config exceptions for invalid temporary media config types', function
 })->throws(InvalidConfigException::class, 'disk must be a non-empty string');
 
 it('throws for invalid temporary media directory and visibility config types', function (): void {
-    $provider = makeBaseProviderStub();
     $tempFile = tempnam(sys_get_temp_dir(), 'socialize-base-config-2-');
 
     if (! \is_string($tempFile))
@@ -259,19 +374,29 @@ it('throws for invalid temporary media directory and visibility config types', f
 
     file_put_contents($tempFile, 'test');
 
-    config()->set('socialize.temporary_media.disk', 'public');
-    config()->set('socialize.temporary_media.directory', []);
-
     try
     {
-        expect(fn (): mixed => $provider->callMakeTemporaryPublicUrlForLocalPath($tempFile, 'invalid directory'))
+        $invalidDirectoryProvider = makeBaseProviderStub(httpConfig: [
+            'temporary_media' => [
+                'disk'       => 'public',
+                'directory'  => [],
+                'visibility' => 'public',
+            ],
+        ]);
+
+        expect(fn (): mixed => $invalidDirectoryProvider->callMakeTemporaryPublicUrlForLocalPath($tempFile, 'invalid directory'))
             ->toThrow(InvalidConfigException::class, 'directory must be a string')
         ;
 
-        config()->set('socialize.temporary_media.directory', 'socialize-temp');
-        config()->set('socialize.temporary_media.visibility', []);
+        $invalidVisibilityProvider = makeBaseProviderStub(httpConfig: [
+            'temporary_media' => [
+                'disk'       => 'public',
+                'directory'  => 'socialize-temp',
+                'visibility' => [],
+            ],
+        ]);
 
-        expect(fn (): mixed => $provider->callMakeTemporaryPublicUrlForLocalPath($tempFile, 'invalid visibility'))
+        expect(fn (): mixed => $invalidVisibilityProvider->callMakeTemporaryPublicUrlForLocalPath($tempFile, 'invalid visibility'))
             ->toThrow(InvalidConfigException::class, 'visibility must be a string')
         ;
     } finally
@@ -282,9 +407,6 @@ it('throws for invalid temporary media directory and visibility config types', f
 
 it('throws when temporary media URL cannot be generated as valid url', function (): void {
     Storage::fake('public');
-    config()->set('socialize.temporary_media.disk', 'public');
-    config()->set('socialize.temporary_media.directory', 'socialize-temp');
-    config()->set('socialize.temporary_media.visibility', 'public');
 
     URL::shouldReceive('to')->andReturn('not-a-url');
 
@@ -431,10 +553,6 @@ it('returns local upload source unchanged and cleanup is a no-op', function (): 
 });
 
 it('throws when temporary media storage copy fails', function (): void {
-    config()->set('socialize.temporary_media.disk', 'public');
-    config()->set('socialize.temporary_media.directory', 'socialize-temp');
-    config()->set('socialize.temporary_media.visibility', 'public');
-
     $provider = makeBaseProviderStub();
     $tempFile = tempnam(sys_get_temp_dir(), 'socialize-base-putfile-fail-');
 
@@ -461,10 +579,6 @@ it('throws when temporary media storage copy fails', function (): void {
 })->throws(InvalidSharePayloadException::class, 'Failed to copy');
 
 it('throws when temporary media url generation is empty and cleans stored file', function (): void {
-    config()->set('socialize.temporary_media.disk', 'public');
-    config()->set('socialize.temporary_media.directory', 'socialize-temp');
-    config()->set('socialize.temporary_media.visibility', 'public');
-
     $provider = makeBaseProviderStub();
     $tempFile = tempnam(sys_get_temp_dir(), 'socialize-base-empty-url-');
 
@@ -492,6 +606,72 @@ it('throws when temporary media url generation is empty and cleans stored file',
     }
 })->throws(InvalidSharePayloadException::class, 'Could not generate a public URL');
 
+it('falls back to default temporary media config when temporary_media config is not an array', function (): void {
+    Storage::fake('public');
+
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-base-temp-non-array-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for base provider non-array temporary media config test.');
+    }
+
+    $imagePath = $tempFile . '.jpg';
+    rename($tempFile, $imagePath);
+    file_put_contents($imagePath, 'image-bytes');
+
+    $provider = makeBaseProviderStub(httpConfig: [
+        'temporary_media' => 'not-an-array',
+    ]);
+
+    try
+    {
+        $temporary = $provider->callMakeTemporaryPublicUrlForLocalPath($imagePath, 'non-array temporary media config');
+
+        expect($temporary['url'])->toContain('/storage/socialize-temp/');
+
+        $cleanup = $temporary['cleanup'];
+        $cleanup();
+    } finally
+    {
+        @unlink($imagePath);
+    }
+
+    expect(Storage::disk('public')->allFiles('socialize-temp'))->toBe([]);
+});
+
+it('swallows exceptions thrown while deleting temporary storage files in cleanup callback', function (): void {
+    $provider = makeBaseProviderStub();
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-base-cleanup-throw-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for base provider cleanup throw test.');
+    }
+
+    file_put_contents($tempFile, 'image-bytes');
+
+    $diskMock = Mockery::mock();
+    $diskMock->shouldReceive('putFileAs')->once()->andReturn('socialize-temp/stored-file.jpg');
+    $diskMock->shouldReceive('url')->once()->with('socialize-temp/stored-file.jpg')->andReturn('https://example.com/storage/socialize-temp/stored-file.jpg');
+    $diskMock->shouldReceive('delete')->once()->with('socialize-temp/stored-file.jpg')->andThrow(new RuntimeException('delete failed'));
+    Storage::shouldReceive('disk')->times(3)->with('public')->andReturn($diskMock);
+
+    try
+    {
+        $temporary = $provider->callMakeTemporaryPublicUrlForLocalPath($tempFile, 'cleanup throw');
+        $cleanup   = $temporary['cleanup'];
+        $cleanup();
+
+        expect(true)->toBeTrue();
+    } finally
+    {
+        @unlink($tempFile);
+        Storage::clearResolvedInstances();
+        Mockery::close();
+    }
+});
+
 it('throws when preparing upload source with empty value', function (): void {
     $provider = makeBaseProviderStub();
 
@@ -514,6 +694,64 @@ it('handles cleanup safely when prepared upload temporary file is already delete
     $cleanup();
 
     expect(file_exists($path))->toBeFalse();
+});
+
+it('throws when writing downloaded upload source to temporary file fails', function (): void {
+    Http::fake([
+        'https://cdn.example.com/prepare-write-fail.jpg' => Http::response('image-bytes', 200, ['Content-Type' => 'image/jpeg']),
+    ]);
+
+    $provider  = makeBaseProviderStub();
+    $fixedUuid = '11111111-1111-1111-1111-111111111111';
+    $target    = sys_get_temp_dir() . '/socialize-upload-' . $fixedUuid . '.jpg';
+
+    if (! is_dir($target))
+    {
+        mkdir($target, 0777, true);
+    }
+
+    Str::createUuidsUsing(static fn (): UuidInterface => Uuid::fromString($fixedUuid));
+
+    try
+    {
+        expect(fn (): mixed => $provider->callPrepareUploadSource('https://cdn.example.com/prepare-write-fail.jpg'))
+            ->toThrow(InvalidSharePayloadException::class, 'Unable to create temporary downloaded media file')
+        ;
+    } finally
+    {
+        Str::createUuidsNormally();
+        @rmdir($target);
+    }
+});
+
+it('swallows unlink warnings in upload source cleanup callback', function (): void {
+    Http::fake([
+        'https://cdn.example.com/cleanup-unlink-warning' => Http::response('image-bytes', 200, ['Content-Type' => 'image/jpeg']),
+    ]);
+
+    $provider = makeBaseProviderStub();
+    $prepared = $provider->callPrepareUploadSource('https://cdn.example.com/cleanup-unlink-warning');
+    $path     = $prepared['source'];
+
+    expect(file_exists($path))->toBeTrue();
+
+    @unlink($path);
+    mkdir($path);
+
+    set_error_handler(static function (int $severity, string $message, string $file, int $line): never {
+        throw new ErrorException($message, 0, $severity, $file, $line);
+    });
+
+    try
+    {
+        $cleanup = $prepared['cleanup'];
+        $cleanup();
+        expect(true)->toBeTrue();
+    } finally
+    {
+        restore_error_handler();
+        @rmdir($path);
+    }
 });
 
 it('maps media mime types to temporary upload file extensions', function (): void {

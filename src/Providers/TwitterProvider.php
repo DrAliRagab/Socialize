@@ -15,11 +15,8 @@ use DrAliRagab\Socialize\ValueObjects\ShareResult;
 
 use const FILTER_VALIDATE_URL;
 
-use Illuminate\Support\Facades\Http;
-
 use function in_array;
 use function is_array;
-use function is_bool;
 use function is_int;
 use function is_string;
 use function pathinfo;
@@ -264,7 +261,7 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
 
     private function uploadInit(int $size, string $mimeType, string $mediaType): string
     {
-        $categories = [$this->resolveMediaCategory($mediaType, $mimeType)];
+        $categories = [$this->resolveMediaCategory($mediaType)];
 
         if ($mediaType === 'video' && ! in_array('amplify_video', $categories, true))
         {
@@ -483,14 +480,14 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
         };
     }
 
-    private function resolveMediaCategory(string $mediaType, string $mimeType): string
+    private function resolveMediaCategory(string $mediaType): string
     {
         if ($mediaType === 'video')
         {
             return 'tweet_video';
         }
 
-        return $mimeType === 'image/gif' ? 'tweet_gif' : 'tweet_image';
+        return 'tweet_image';
     }
 
     /**
@@ -512,25 +509,19 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
 
     private function uploadAppendViaEndpoint(string $mediaId, int $segment, string $chunk, string $fileName): void
     {
-        $response = Http::withHeaders($this->headers())
-            ->baseUrl($this->baseUrl())
-            ->timeout($this->intConfig('timeout', 15))
-            ->connectTimeout($this->intConfig('connect_timeout', 10))
-            ->retry(
-                $this->intConfig('retries', 1),
-                $this->intConfig('retry_sleep_ms', 150),
-                throw: false,
-            )
-            ->attach('media', $chunk, $fileName)
-            ->post(sprintf('/2/media/upload/%s/append', $mediaId), [
+        $this->sendMultipart(
+            method: 'POST',
+            url: $this->baseUrl() . sprintf('/2/media/upload/%s/append', $mediaId),
+            fields: [
                 'segment_index' => $segment,
-            ])
-        ;
-
-        if ($response->failed())
-        {
-            throw ApiException::fromResponse($this->provider(), $response);
-        }
+            ],
+            headers: $this->headers(),
+            attachment: [
+                'name'     => 'media',
+                'contents' => $chunk,
+                'filename' => $fileName,
+            ],
+        );
     }
 
     /**
@@ -560,58 +551,19 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
      */
     private function uploadCommand(array $fields, ?string $chunk = null, ?string $fileName = null): array
     {
-        $pending = Http::withHeaders($this->headers())
-            ->baseUrl($this->baseUrl())
-            ->timeout($this->intConfig('timeout', 15))
-            ->connectTimeout($this->intConfig('connect_timeout', 10))
-            ->retry(
-                $this->intConfig('retries', 1),
-                $this->intConfig('retry_sleep_ms', 150),
-                throw: false,
-            )
-        ;
-
-        if (is_string($chunk))
-        {
-            $pending  = $pending->attach('media', $chunk, $fileName ?? 'media.bin');
-            $response = $pending->post('/2/media/upload', $fields);
-        } else
-        {
-            /** @var array<int, array{name: string, contents: string}> $multipart */
-            $multipart = [];
-
-            foreach ($fields as $name => $value)
-            {
-                if (is_bool($value))
-                {
-                    $value = $value ? 'true' : 'false';
-                }
-
-                if (is_int($value))
-                {
-                    $value = (string)$value;
-                }
-
-                if (! is_string($value))
-                {
-                    continue;
-                }
-
-                $multipart[] = [
-                    'name'     => (string)$name,
-                    'contents' => $value,
-                ];
-            }
-
-            $response = $pending->send('POST', '/2/media/upload', [
-                'multipart' => $multipart,
-            ]);
-        }
-
-        if ($response->failed())
-        {
-            throw ApiException::fromResponse($this->provider(), $response);
-        }
+        $response = $this->sendMultipart(
+            method: 'POST',
+            url: $this->baseUrl() . '/2/media/upload',
+            fields: $fields,
+            headers: $this->headers(),
+            attachment: is_string($chunk)
+                ? [
+                    'name'     => 'media',
+                    'contents' => $chunk,
+                    'filename' => $fileName ?? 'media.bin',
+                ]
+                : null,
+        );
 
         return $this->decode($response);
     }

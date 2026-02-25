@@ -13,6 +13,7 @@ use DrAliRagab\Socialize\Exceptions\ApiException;
 use DrAliRagab\Socialize\Exceptions\InvalidConfigException;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\ValueObjects\SharePayload;
+use Exception;
 
 use function file_exists;
 use function file_get_contents;
@@ -33,6 +34,7 @@ use function in_array;
 use InvalidArgumentException;
 
 use function is_array;
+use function is_bool;
 use function is_int;
 use function is_readable;
 use function is_string;
@@ -108,11 +110,121 @@ abstract class BaseProvider
                 'PATCH'  => $pendingRequest->patch($path, $data),
                 default  => throw new InvalidArgumentException(sprintf('Unsupported HTTP method [%s].', $method)),
             };
-        } catch (Throwable $throwable)
+        } catch (Exception $exception)
         {
             throw ApiException::invalidResponse(
                 $this->provider(),
-                sprintf('%s request failed before receiving a valid response: %s', $this->providerName(), $throwable->getMessage()),
+                sprintf('%s request failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
+            );
+        }
+
+        if ($response->failed())
+        {
+            throw ApiException::fromResponse($this->provider(), $response);
+        }
+
+        return $response;
+    }
+
+    /**
+     * @param array<string, string> $headers
+     */
+    protected function sendBinary(string $method, string $url, string $contents, string $contentType, array $headers = []): Response
+    {
+        $method = mb_strtoupper($method);
+
+        try
+        {
+            $response = Http::withHeaders($headers)
+                ->timeout($this->intConfig('timeout', 15))
+                ->connectTimeout($this->intConfig('connect_timeout', 10))
+                ->retry(
+                    $this->intConfig('retries', 1),
+                    $this->intConfig('retry_sleep_ms', 150),
+                    throw: false,
+                )
+                ->withBody($contents, $contentType)
+                ->send($method, $url)
+            ;
+        } catch (Exception $exception)
+        {
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                sprintf('%s request failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
+            );
+        }
+
+        if ($response->failed())
+        {
+            throw ApiException::fromResponse($this->provider(), $response);
+        }
+
+        return $response;
+    }
+
+    /**
+     * @param array<string, mixed> $fields
+     * @param array<string, string> $headers
+     * @param array{name: string, contents: string, filename: string}|null $attachment
+     */
+    protected function sendMultipart(string $method, string $url, array $fields, array $headers = [], ?array $attachment = null): Response
+    {
+        $method = mb_strtoupper($method);
+
+        /** @var array<int, array{name: string, contents: string, filename?: string}> $multipart */
+        $multipart = [];
+
+        foreach ($fields as $name => $value)
+        {
+            if (is_bool($value))
+            {
+                $value = $value ? 'true' : 'false';
+            }
+
+            if (is_int($value))
+            {
+                $value = (string)$value;
+            }
+
+            if (! is_string($value))
+            {
+                continue;
+            }
+
+            $multipart[] = [
+                'name'     => (string)$name,
+                'contents' => $value,
+            ];
+        }
+
+        if (is_array($attachment))
+        {
+            $multipart[] = [
+                'name'     => $attachment['name'],
+                'contents' => $attachment['contents'],
+                'filename' => $attachment['filename'],
+            ];
+        }
+
+        try
+        {
+            $response = Http::withHeaders($headers)
+                ->timeout($this->intConfig('timeout', 15))
+                ->connectTimeout($this->intConfig('connect_timeout', 10))
+                ->retry(
+                    $this->intConfig('retries', 1),
+                    $this->intConfig('retry_sleep_ms', 150),
+                    throw: false,
+                )
+                ->send($method, $url, [
+                    'multipart' => $multipart,
+                ])
+            ;
+        } catch (Exception $exception)
+        {
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                sprintf('%s request failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
             );
         }
 
@@ -153,9 +265,7 @@ abstract class BaseProvider
         {
             if ($this->credential($key) === null)
             {
-                throw new InvalidConfigException(
-                    sprintf('Missing required credential [%s] for provider [%s] and profile [%s].', $key, $this->providerName(), $this->profile),
-                );
+                throw InvalidConfigException::missingCredential($key, $this->providerName(), $this->profile);
             }
         }
     }
@@ -180,19 +290,40 @@ abstract class BaseProvider
         /** @var list<array{source: string, type: ?string}> $sources */
         $sources = [];
 
-        $rawSources = $sharePayload->option('media_sources');
-
-        if (is_array($rawSources))
+        foreach ($sharePayload->mediaSources() as $mediaSource)
         {
-            foreach ($rawSources as $rawSource)
+            $source = mb_trim($mediaSource['source']);
+            $type   = $mediaSource['type'];
+
+            if ($source === '')
             {
-                if (! is_array($rawSource))
+                continue;
+            }
+
+            $normalizedType = is_string($type) && mb_trim($type) !== ''
+                ? mb_strtolower(mb_trim($type))
+                : null;
+
+            $this->appendUniqueMediaSource(
+                $sources,
+                $source,
+                $normalizedType,
+            );
+        }
+
+        $legacySources = $sharePayload->option('media_sources');
+
+        if (is_array($legacySources))
+        {
+            foreach ($legacySources as $legacySource)
+            {
+                if (! is_array($legacySource))
                 {
                     continue;
                 }
 
-                $source = $rawSource['source'] ?? null;
-                $type   = $rawSource['type']   ?? null;
+                $source = $legacySource['source'] ?? null;
+                $type   = $legacySource['type']   ?? null;
 
                 if (! is_string($source))
                 {
@@ -245,9 +376,9 @@ abstract class BaseProvider
             throw new InvalidSharePayloadException(sprintf('%s path does not exist or is not readable [%s].', $context, $source));
         }
 
-        $disk       = config('socialize.temporary_media.disk', 'public');
-        $directory  = config('socialize.temporary_media.directory', 'socialize-temp');
-        $visibility = config('socialize.temporary_media.visibility', 'public');
+        $disk       = $this->temporaryMediaConfigValue('disk', 'public');
+        $directory  = $this->temporaryMediaConfigValue('directory', 'socialize-temp');
+        $visibility = $this->temporaryMediaConfigValue('visibility', 'public');
 
         if (! is_string($disk) || mb_trim($disk) === '')
         {
@@ -356,11 +487,11 @@ abstract class BaseProvider
             try
             {
                 $response = $pendingRequest->get($source);
-            } catch (Throwable $throwable)
+            } catch (Exception $exception)
             {
                 throw ApiException::invalidResponse(
                     $this->provider(),
-                    sprintf('%s media download failed before receiving a valid response: %s', $this->providerName(), $throwable->getMessage()),
+                    sprintf('%s media download failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
                 );
             }
 
@@ -408,11 +539,6 @@ abstract class BaseProvider
         $mimeType     = is_string($detectedMime) && mb_trim($detectedMime) !== '' ? mb_trim($detectedMime) : null;
         $fileName     = basename($source);
 
-        if ($fileName === '')
-        {
-            $fileName = 'media.bin';
-        }
-
         return [
             'contents'  => $contents,
             'mime_type' => $mimeType,
@@ -459,7 +585,7 @@ abstract class BaseProvider
             $temporaryPath .= '.' . $extension;
         }
 
-        $written = file_put_contents($temporaryPath, $media['contents']);
+        $written = @file_put_contents($temporaryPath, $media['contents']);
 
         if ($written === false || $written <= 0)
         {
@@ -600,6 +726,18 @@ abstract class BaseProvider
             'video/quicktime' => 'mov',
             default           => '',
         };
+    }
+
+    private function temporaryMediaConfigValue(string $key, mixed $default): mixed
+    {
+        $temporaryMediaConfig = $this->httpConfig['temporary_media'] ?? null;
+
+        if (! is_array($temporaryMediaConfig))
+        {
+            return $default;
+        }
+
+        return $temporaryMediaConfig[$key] ?? $default;
     }
 
     /**

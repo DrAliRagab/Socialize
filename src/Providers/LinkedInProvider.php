@@ -16,8 +16,6 @@ use DrAliRagab\Socialize\ValueObjects\ShareResult;
 
 use const FILTER_VALIDATE_URL;
 
-use Illuminate\Support\Facades\Http;
-
 use function in_array;
 use function is_array;
 use function is_int;
@@ -30,6 +28,7 @@ use function sprintf;
 use function str_contains;
 use function str_starts_with;
 use function substr;
+use function usleep;
 
 final class LinkedInProvider extends BaseProvider implements ProviderDriver
 {
@@ -78,6 +77,8 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
             'isReshareDisabledByAuthor' => false,
         ];
 
+        $content = [];
+
         if (is_string($sharePayload->link()) && mb_trim($sharePayload->link()) !== '')
         {
             if (filter_var($sharePayload->link(), FILTER_VALIDATE_URL) === false)
@@ -85,21 +86,22 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
                 throw new InvalidSharePayloadException('LinkedIn link must be a valid URL.');
             }
 
-            $payloadBody['content'] = [
-                'article' => [
-                    'source' => mb_trim($sharePayload->link()),
-                    'title'  => $this->articleTitle($sharePayload),
-                ],
+            $content['article'] = [
+                'source' => mb_trim($sharePayload->link()),
+                'title'  => $this->articleTitle($sharePayload),
             ];
         }
 
         if ($hasMediaUrn)
         {
-            $payloadBody['content'] = [
-                'media' => [
-                    'id' => mb_trim($mediaUrn),
-                ],
+            $content['media'] = [
+                'id' => mb_trim($mediaUrn),
             ];
+        }
+
+        if ($content !== [])
+        {
+            $payloadBody['content'] = $content;
         }
 
         $response = $this->send('POST', '/rest/posts', $payloadBody, $this->headers());
@@ -462,25 +464,16 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
 
     private function uploadToLinkedInAssetUrl(string $uploadUrl, string $contents, string $mimeType): ?string
     {
-        $response = Http::withHeaders([
-            'Authorization' => 'Bearer ' . $this->credential('access_token'),
-            'Content-Type'  => $mimeType,
-        ])
-            ->timeout($this->intConfig('timeout', 15))
-            ->connectTimeout($this->intConfig('connect_timeout', 10))
-            ->retry(
-                $this->intConfig('retries', 1),
-                $this->intConfig('retry_sleep_ms', 150),
-                throw: false,
-            )
-            ->withBody($contents, $mimeType)
-            ->put($uploadUrl)
-        ;
-
-        if ($response->failed())
-        {
-            throw ApiException::fromResponse($this->provider(), $response);
-        }
+        $response = $this->sendBinary(
+            method: 'PUT',
+            url: $uploadUrl,
+            contents: $contents,
+            contentType: $mimeType,
+            headers: [
+                'Authorization' => 'Bearer ' . $this->credential('access_token'),
+                'Content-Type'  => $mimeType,
+            ],
+        );
 
         $etag = mb_trim((string)$response->header('etag'));
 
@@ -516,31 +509,7 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
             return;
         }
 
-        $videoStatus = $this->decode($this->send(
-            'GET',
-            sprintf('/rest/videos/%s', rawurlencode($videoUrn)),
-            [],
-            $this->headers(),
-        ));
-
-        $status = $videoStatus['status'] ?? null;
-
-        if (! is_string($status))
-        {
-            return;
-        }
-
-        $normalizedStatus = mb_strtoupper(mb_trim($status));
-
-        if (in_array($normalizedStatus, ['PROCESSING_FAILED', 'FAILED'], true))
-        {
-            $reason = $videoStatus['processingFailureReason'] ?? 'unknown reason';
-
-            throw ApiException::invalidResponse(
-                $this->provider(),
-                sprintf('LinkedIn video processing failed for [%s]: %s', $videoUrn, is_string($reason) ? $reason : 'unknown reason'),
-            );
-        }
+        $this->waitForLinkedInVideoAvailability($videoUrn);
     }
 
     private function linkedInContentType(?string $detectedMime, string $mediaType): string
@@ -581,5 +550,94 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
         }
 
         return null;
+    }
+
+    private function waitForLinkedInVideoAvailability(string $videoUrn): void
+    {
+        $maxAttempts  = $this->videoStatusPollAttempts();
+        $sleepSeconds = $this->videoStatusPollSleepSeconds();
+
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++)
+        {
+            $videoStatus = $this->decode($this->send(
+                'GET',
+                sprintf('/rest/videos/%s', rawurlencode($videoUrn)),
+                [],
+                $this->headers(),
+            ));
+
+            $status = $videoStatus['status'] ?? null;
+
+            if (! is_string($status))
+            {
+                return;
+            }
+
+            $normalizedStatus = mb_strtoupper(mb_trim($status));
+
+            if ($normalizedStatus === 'AVAILABLE')
+            {
+                return;
+            }
+
+            if (in_array($normalizedStatus, ['PROCESSING_FAILED', 'FAILED'], true))
+            {
+                $reason = $videoStatus['processingFailureReason'] ?? 'unknown reason';
+
+                throw ApiException::invalidResponse(
+                    $this->provider(),
+                    sprintf('LinkedIn video processing failed for [%s]: %s', $videoUrn, is_string($reason) ? $reason : 'unknown reason'),
+                );
+            }
+
+            if ($attempt >= $maxAttempts - 1)
+            {
+                break;
+            }
+
+            if ($sleepSeconds > 0)
+            {
+                usleep($sleepSeconds * 1_000_000);
+            }
+        }
+
+        throw ApiException::invalidResponse(
+            $this->provider(),
+            sprintf('LinkedIn video processing timed out for [%s].', $videoUrn),
+        );
+    }
+
+    private function videoStatusPollAttempts(): int
+    {
+        $configured = $this->providerConfig['video_status_poll_attempts'] ?? 20;
+
+        if (is_int($configured))
+        {
+            return max(1, $configured);
+        }
+
+        if (is_string($configured) && preg_match('/^-?\d+$/', $configured) === 1)
+        {
+            return max(1, (int)$configured);
+        }
+
+        return 20;
+    }
+
+    private function videoStatusPollSleepSeconds(): int
+    {
+        $configured = $this->providerConfig['video_status_poll_sleep_seconds'] ?? 2;
+
+        if (is_int($configured))
+        {
+            return max(0, $configured);
+        }
+
+        if (is_string($configured) && preg_match('/^-?\d+$/', $configured) === 1)
+        {
+            return max(0, (int)$configured);
+        }
+
+        return 2;
     }
 }

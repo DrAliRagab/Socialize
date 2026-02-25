@@ -122,6 +122,26 @@ it('maps explicit instagram VIDEO media_type option to REELS for compatibility',
         && ($request->data()['media_type'] ?? null)                 === 'REELS');
 });
 
+it('supports instagram stories media type for video publishing', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'            => Http::response(['id' => 'container-video-story'], 200),
+        'https://graph.facebook.com/v25.0/container-video-story*' => Http::response(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish'    => Http::response(['id' => 'ig-video-story'], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->message('Story')
+        ->videoUrl('https://cdn.example.com/story.mp4')
+        ->option('media_type', 'STORIES')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-video-story');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/98765/media'
+        && ($request->data()['media_type'] ?? null)                 === 'STORIES');
+});
+
 it('waits for instagram video container readiness before publish', function (): void {
     Http::fake([
         'https://graph.facebook.com/v25.0/98765/media'            => Http::response(['id' => 'container-video-ready'], 200),
@@ -140,7 +160,7 @@ it('waits for instagram video container readiness before publish', function (): 
     Http::assertSentCount(4);
 });
 
-it('continues instagram publish when container status reports error and relies on publish result', function (): void {
+it('throws when instagram container status reports error before publish', function (): void {
     Http::fake([
         'https://graph.facebook.com/v25.0/98765/media'            => Http::response(['id' => 'container-video-error'], 200),
         'https://graph.facebook.com/v25.0/container-video-error*' => Http::response([
@@ -150,13 +170,11 @@ it('continues instagram publish when container status reports error and relies o
         'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-video-status-error'], 200),
     ]);
 
-    $shareResult = Socialize::instagram()
+    Socialize::instagram()
         ->videoUrl('https://cdn.example.com/video-error.mp4')
         ->share()
     ;
-
-    expect($shareResult->id())->toBe('ig-video-status-error');
-});
+})->throws(ApiException::class, 'Instagram media container is not publishable');
 
 it('shares instagram carousel content', function (): void {
     Http::fake([
@@ -320,22 +338,84 @@ it('shares instagram video from local path in videoUrl through temporary URL', f
         && str_contains((string)($request->data()['video_url'] ?? ''), '/storage/socialize-temp/'));
 });
 
-it('ignores empty items in instagram carousel list before creating children', function (): void {
+it('throws when instagram carousel resolves to fewer than 2 media items', function (): void {
     Http::fake([
-        'https://graph.facebook.com/v25.0/98765/media' => Http::sequence()
-            ->push(['id' => 'child-only'], 200)
-            ->push(['id' => 'parent-only'], 200),
-        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-carousel-sparse'], 200),
+        'https://graph.facebook.com/*' => Http::response(['id' => 'unused'], 200),
     ]);
 
-    $shareResult = Socialize::instagram()
+    Socialize::instagram()
         ->message('Sparse carousel')
         ->carousel(['   ', 'https://cdn.example.com/only.jpg'])
         ->share()
     ;
+})->throws(InvalidSharePayloadException::class, 'Instagram carousel must contain between 2 and 10 media items');
 
-    expect($shareResult->id())->toBe('ig-carousel-sparse');
-    Http::assertSentCount(3);
+it('throws when instagram carousel has more than 10 items', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/*' => Http::response(['id' => 'unused'], 200),
+    ]);
+
+    $items = [];
+
+    for ($i = 1; $i <= 11; $i++)
+    {
+        $items[] = \sprintf('https://cdn.example.com/%d.jpg', $i);
+    }
+
+    Socialize::instagram()
+        ->message('Too many items')
+        ->carousel($items)
+        ->share()
+    ;
+})->throws(InvalidSharePayloadException::class, 'Instagram carousel must contain between 2 and 10 media items');
+
+it('supports mixed instagram carousel items with video children', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media' => Http::sequence()
+            ->push(['id' => 'child-image-1'], 200)
+            ->push(['id' => 'child-video-1'], 200)
+            ->push(['id' => 'parent-mixed-1'], 200),
+        'https://graph.facebook.com/v25.0/parent-mixed-1*'     => Http::response(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-carousel-mixed'], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->message('Mixed carousel')
+        ->carousel([
+            'https://cdn.example.com/1.jpg',
+            'https://cdn.example.com/clip.mp4',
+        ])
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-carousel-mixed');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/98765/media'
+        && ($request->data()['video_url'] ?? null)                  === 'https://cdn.example.com/clip.mp4'
+        && ($request->data()['media_type'] ?? null)                 === 'VIDEO');
+});
+
+it('supports structured instagram carousel items and ignores invalid entries', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media' => Http::sequence()
+            ->push(['id' => 'child-structured-1'], 200)
+            ->push(['id' => 'child-structured-2'], 200)
+            ->push(['id' => 'parent-structured-1'], 200),
+        'https://graph.facebook.com/v25.0/parent-structured-1*' => Http::response(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish'  => Http::response(['id' => 'ig-carousel-structured'], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->message('Structured carousel')
+        ->option('carousel_items', [
+            ['source' => 100, 'type' => 'video'],
+            ['source' => 'https://cdn.example.com/structured-one.jpg', 'type' => 'image'],
+            ['source' => 'https://cdn.example.com/structured-two.mp4', 'type' => 'video'],
+        ])
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-carousel-structured');
 });
 
 it('deletes instagram post', function (): void {
@@ -454,6 +534,52 @@ it('throws on final instagram not-ready publish attempt when retries are exhaust
     Socialize::instagram()->imageUrl('https://cdn.example.com/retry-final.jpg')->share();
 })->throws(ApiException::class, 'Media ID is not available');
 
+it('parses instagram retry settings from numeric strings', function (): void {
+    config()->set('socialize.providers.instagram.publish_retry_attempts', '2');
+    config()->set('socialize.providers.instagram.publish_retry_sleep_seconds', '0');
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-retry-string'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::sequence()
+            ->push([
+                'error' => [
+                    'message'       => 'Media ID is not available',
+                    'code'          => 9007,
+                    'error_subcode' => 2207027,
+                ],
+            ], 400)
+            ->push(['id' => 'ig-retry-string-success'], 200),
+        'https://graph.facebook.com/v25.0/container-retry-string*' => Http::response([
+            'status_code' => 'FINISHED',
+            'status'      => 'READY',
+        ], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->imageUrl('https://cdn.example.com/retry-string.jpg')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-retry-string-success');
+});
+
+it('falls back to default instagram retry settings when configured values are invalid', function (): void {
+    config()->set('socialize.providers.instagram.publish_retry_attempts', 'invalid');
+    config()->set('socialize.providers.instagram.publish_retry_sleep_seconds', 'invalid');
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-retry-invalid'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-retry-invalid-success'], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->imageUrl('https://cdn.example.com/retry-invalid.jpg')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-retry-invalid-success');
+});
+
 it('retries instagram publish when not-ready state is inferred from error text and eta', function (): void {
     config()->set('socialize.providers.instagram.publish_retry_attempts', 2);
     config()->set('socialize.providers.instagram.publish_retry_sleep_seconds', 0);
@@ -556,7 +682,7 @@ it('rethrows instagram container status polling 400 errors unrelated to estimate
     Socialize::instagram()->imageUrl('https://cdn.example.com/retry-bad-code.jpg')->share();
 })->throws(ApiException::class, 'status 400');
 
-it('continues instagram video share when readiness polling reaches attempt limit without ready state', function (): void {
+it('throws when instagram readiness polling reaches attempt limit without ready state', function (): void {
     config()->set('socialize.providers.instagram.publish_retry_attempts', 1);
     config()->set('socialize.providers.instagram.publish_retry_sleep_seconds', 0);
 
@@ -569,13 +695,11 @@ it('continues instagram video share when readiness polling reaches attempt limit
         'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-video-attempt-limit'], 200),
     ]);
 
-    $shareResult = Socialize::instagram()
+    Socialize::instagram()
         ->videoUrl('https://cdn.example.com/video-attempt-limit.mp4')
         ->share()
     ;
-
-    expect($shareResult->id())->toBe('ig-video-attempt-limit');
-});
+})->throws(ApiException::class, 'Instagram media container was not ready after 1 attempt');
 
 it('falls back instagram status polling when estimated time field is unsupported', function (): void {
     Http::fake([

@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace DrAliRagab\Socialize\Enums;
 
-use InvalidArgumentException;
-
-use function sprintf;
+use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 
 enum Provider: string
 {
@@ -25,7 +23,7 @@ enum Provider: string
             'instagram', 'ig' => self::Instagram,
             'twitter', 'x' => self::Twitter,
             'linkedin', 'li' => self::LinkedIn,
-            default => throw new InvalidArgumentException(sprintf('Unsupported provider [%s].', $provider)),
+            default => throw InvalidSharePayloadException::unsupportedProvider($provider),
         };
     }
 }

@@ -85,3 +85,24 @@ it('ignores non string mapped values in trait column resolution', function (): v
 
     expect($shareResult->id())->toBe('x-post-2');
 });
+
+it('maps configured video column when sharing models', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/*' => Http::response(['id' => 'fb-video-model'], 200),
+    ]);
+
+    config()->set('socialize.model_columns.video', 'clip');
+    config()->set('socialize.model_columns.image', 'missing-image');
+
+    $post = new PostModel([
+        'title' => 'Video model post',
+        'clip'  => 'https://cdn.example.com/model-video.mp4',
+    ]);
+
+    $shareResult = $post->shareToFacebook();
+
+    expect($shareResult->id())->toBe('fb-video-model');
+
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/videos')
+        && ($request->data()['file_url'] ?? null) === 'https://cdn.example.com/model-video.mp4');
+});

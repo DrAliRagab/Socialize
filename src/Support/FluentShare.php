@@ -19,10 +19,41 @@ use function in_array;
 use function is_array;
 use function is_int;
 use function is_string;
-use function sprintf;
 
 final class FluentShare
 {
+    private const array SHARED_OPTION_KEYS = [
+        'media_sources',
+    ];
+
+    /**
+     * @var array<string, list<string>>
+     */
+    private const array PROVIDER_OPTION_KEYS = [
+        'facebook' => [
+            'published',
+            'scheduled_at',
+            'targeting',
+        ],
+        'instagram' => [
+            'alt_text',
+            'carousel_items',
+            'carousel_contains_video',
+            'media_type',
+        ],
+        'twitter' => [
+            'poll',
+            'quote_tweet_id',
+            'reply_to',
+        ],
+        'linkedin' => [
+            'article_title',
+            'distribution',
+            'media_urn',
+            'visibility',
+        ],
+    ];
+
     private ?string $message = null;
 
     private ?string $link = null;
@@ -34,6 +65,9 @@ final class FluentShare
     /** @var list<string> */
     private array $mediaIds = [];
 
+    /** @var list<array{source: string, type: ?string}> */
+    private array $mediaSources = [];
+
     /** @var array<string, mixed> */
     private array $providerOptions = [];
 
@@ -43,6 +77,7 @@ final class FluentShare
     public function __construct(
         private readonly Provider $provider,
         private readonly ProviderDriver $providerDriver,
+        private readonly bool $strictOptionKeys = true,
     ) {}
 
     public function message(?string $message): self
@@ -162,11 +197,14 @@ final class FluentShare
                 && $existingSource === $entry['source']
                 && $existingType   === ($entry['type'] ?? null)
             ) {
+                $this->appendMediaSourceForPayload($entry['source'], $entry['type'] ?? null);
+
                 return $this;
             }
         }
 
         $sources[] = $entry;
+        $this->appendMediaSourceForPayload($entry['source'], $entry['type'] ?? null);
 
         return $this->option('media_sources', $sources);
     }
@@ -183,6 +221,11 @@ final class FluentShare
 
     public function option(string $key, mixed $value): self
     {
+        if (! $this->isAllowedOptionKey($key))
+        {
+            throw InvalidSharePayloadException::unsupportedOptionKey($key, $this->provider->value);
+        }
+
         $this->providerOptions[$key] = $value;
 
         return $this;
@@ -353,6 +396,7 @@ final class FluentShare
             mediaIds: $this->mediaIds,
             providerOptions: $this->providerOptions,
             metadata: $this->metadata,
+            mediaSources: $this->resolvedPayloadMediaSources(),
         ));
     }
 
@@ -375,9 +419,7 @@ final class FluentShare
 
         $allowed = implode(', ', array_map(static fn (Provider $provider): string => $provider->value, $providers));
 
-        throw new UnsupportedFeatureException(
-            sprintf('This method is only available for [%s], current provider is [%s].', $allowed, $this->provider->value),
-        );
+        throw UnsupportedFeatureException::forProviderMethod($allowed, $this->provider->value);
     }
 
     private function normalizeNullableString(?string $value): ?string
@@ -390,5 +432,81 @@ final class FluentShare
         $value = mb_trim($value);
 
         return $value === '' ? null : $value;
+    }
+
+    private function isAllowedOptionKey(string $key): bool
+    {
+        if (! $this->strictOptionKeys)
+        {
+            return true;
+        }
+
+        if (in_array($key, self::SHARED_OPTION_KEYS, true))
+        {
+            return true;
+        }
+
+        $providerOptionKeys = self::PROVIDER_OPTION_KEYS[$this->provider->value];
+
+        return in_array($key, $providerOptionKeys, true);
+    }
+
+    private function appendMediaSourceForPayload(string $source, ?string $type): void
+    {
+        foreach ($this->mediaSources as $mediumSource)
+        {
+            if ($mediumSource['source'] === $source && $mediumSource['type'] === $type)
+            {
+                return;
+            }
+        }
+
+        $this->mediaSources[] = [
+            'source' => $source,
+            'type'   => $type,
+        ];
+    }
+
+    /**
+     * @return list<array{source: string, type: ?string}>
+     */
+    private function resolvedPayloadMediaSources(): array
+    {
+        $sources = $this->mediaSources;
+        $seeded  = $this->providerOptions['media_sources'] ?? null;
+
+        if (! is_array($seeded))
+        {
+            return $sources;
+        }
+
+        foreach ($seeded as $seededSource)
+        {
+            if (! is_array($seededSource))
+            {
+                continue;
+            }
+
+            $source = $seededSource['source'] ?? null;
+            $type   = $seededSource['type']   ?? null;
+
+            if (! is_string($source))
+            {
+                continue;
+            }
+
+            if (mb_trim($source) === '')
+            {
+                continue;
+            }
+
+            $normalizedType = is_string($type) && mb_trim($type) !== ''
+                ? mb_strtolower(mb_trim($type))
+                : null;
+
+            $this->appendMediaSourceForPayload(mb_trim($source), $normalizedType);
+        }
+
+        return $this->mediaSources;
     }
 }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DrAliRagab\Socialize\Providers;
 
+use function count;
+
 use DrAliRagab\Socialize\Contracts\ProviderDriver;
 use DrAliRagab\Socialize\Enums\Provider;
 use DrAliRagab\Socialize\Exceptions\ApiException;
@@ -48,7 +50,7 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
         {
             $resolvedPayload = $this->resolveMediaPayload($sharePayload, $cleanupCallbacks);
 
-            /** @var list<string>|null $carouselItems */
+            /** @var list<array{url: string, type: string}>|null $carouselItems */
             $carouselItems = $resolvedPayload->option('carousel_items');
 
             if (is_array($carouselItems) && $carouselItems !== [])
@@ -59,7 +61,9 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
                 $creationId = $this->createSingleContainer($igId, $accessToken, $version, $resolvedPayload);
             }
 
-            if ($resolvedPayload->videoUrl() !== null)
+            $carouselContainsVideo = (bool)$resolvedPayload->option('carousel_contains_video', false);
+
+            if ($resolvedPayload->videoUrl() !== null || $carouselContainsVideo)
             {
                 $this->waitForContainerReady($creationId, $accessToken, $version);
             }
@@ -169,19 +173,31 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
     }
 
     /**
-     * @param list<string> $carouselItems
+     * @param list<array{url: string, type: string}> $carouselItems
      */
     private function createCarouselContainer(string $igId, string $accessToken, string $version, SharePayload $sharePayload, array $carouselItems): string
     {
+        $this->assertValidCarouselSize($carouselItems);
+
         $children = [];
 
         foreach ($carouselItems as $carouselItem)
         {
-            $child = $this->decode($this->send('POST', sprintf('/%s/%s/media', $version, $igId), [
+            $childPayload = [
                 'access_token'     => $accessToken,
-                'image_url'        => $carouselItem,
                 'is_carousel_item' => true,
-            ]));
+            ];
+
+            if ($carouselItem['type'] === 'video')
+            {
+                $childPayload['video_url']  = $carouselItem['url'];
+                $childPayload['media_type'] = 'VIDEO';
+            } else
+            {
+                $childPayload['image_url'] = $carouselItem['url'];
+            }
+
+            $child = $this->decode($this->send('POST', sprintf('/%s/%s/media', $version, $igId), $childPayload));
 
             $childId = $child['id'] ?? null;
 
@@ -240,6 +256,7 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
     {
         $maxAttempts  = $this->publishRetryAttempts();
         $sleepSeconds = $this->publishRetrySleepSeconds();
+        $lastError    = null;
 
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++)
         {
@@ -258,18 +275,21 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
                     throw $apiException;
                 }
 
-                if ($attempt >= $maxAttempts - 1)
+                if ($attempt < $maxAttempts - 1)
                 {
-                    throw $apiException;
-                }
+                    $wait = $this->containerRetryWaitSeconds($creationId, $accessToken, $version, $sleepSeconds);
 
-                $wait = $this->containerRetryWaitSeconds($creationId, $accessToken, $version, $sleepSeconds);
-
-                if ($wait > 0)
-                {
-                    usleep($wait * 1_000_000);
+                    if ($wait > 0)
+                    {
+                        usleep($wait * 1_000_000);
+                    }
                 }
             }
+        }
+
+        if ($lastError instanceof ApiException)
+        {
+            throw $lastError;
         }
 
         throw ApiException::invalidResponse(Provider::Instagram, 'Instagram publish retry loop exited unexpectedly.');
@@ -372,14 +392,14 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
 
     private function waitForContainerReady(string $creationId, string $accessToken, string $version): void
     {
-        $attempt      = 0;
         $maxAttempts  = $this->publishRetryAttempts();
         $sleepSeconds = $this->publishRetrySleepSeconds();
 
-        while ($attempt < $maxAttempts)
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++)
         {
             $status     = $this->fetchContainerStatus($creationId, $accessToken, $version);
             $statusCode = $status['status_code'] ?? null;
+            $rawStatus  = $status['status']      ?? null;
 
             if (is_string($statusCode))
             {
@@ -392,13 +412,20 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
 
                 if (in_array($normalized, ['error', 'expired', 'failed'], true))
                 {
-                    return;
+                    throw ApiException::invalidResponse(
+                        $this->provider(),
+                        sprintf(
+                            'Instagram media container is not publishable. status_code=%s%s',
+                            $statusCode,
+                            is_string($rawStatus) && mb_trim($rawStatus) !== '' ? sprintf(', status=%s', $rawStatus) : '',
+                        ),
+                    );
                 }
             }
 
             if ($attempt >= $maxAttempts - 1)
             {
-                return;
+                break;
             }
 
             $wait = $this->waitSecondsFromContainerStatus($status, $sleepSeconds);
@@ -407,9 +434,12 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
             {
                 usleep($wait * 1_000_000);
             }
-
-            $attempt++;
         }
+
+        throw ApiException::invalidResponse(
+            $this->provider(),
+            sprintf('Instagram media container was not ready after %d attempt(s).', $maxAttempts),
+        );
     }
 
     private function isUnsupportedEstimatedTimeFieldException(ApiException $apiException): bool
@@ -437,7 +467,7 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
 
     private function publishRetryAttempts(): int
     {
-        $configured = $this->providerConfig['publish_retry_attempts'] ?? 8;
+        $configured = $this->providerConfig['publish_retry_attempts'] ?? 20;
 
         if (is_int($configured))
         {
@@ -449,12 +479,12 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
             return max(1, (int)$configured);
         }
 
-        return 8;
+        return 20;
     }
 
     private function publishRetrySleepSeconds(): int
     {
-        $configured = $this->providerConfig['publish_retry_sleep_seconds'] ?? 2;
+        $configured = $this->providerConfig['publish_retry_sleep_seconds'] ?? 3;
 
         if (is_int($configured))
         {
@@ -466,7 +496,7 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
             return max(0, (int)$configured);
         }
 
-        return 2;
+        return 3;
     }
 
     private function containerStatusDetail(string $creationId, string $accessToken, string $version): string
@@ -506,31 +536,67 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
         $imageUrl = $sharePayload->imageUrl();
         $videoUrl = $sharePayload->videoUrl();
 
-        /** @var list<string>|null $carouselItems */
+        /** @var list<mixed>|null $carouselItems */
         $carouselItems         = $sharePayload->option('carousel_items');
         $resolvedCarouselItems = [];
+        $containsCarouselVideo = false;
 
         if (is_array($carouselItems) && $carouselItems !== [])
         {
             foreach ($carouselItems as $carouselItem)
             {
-                if (mb_trim($carouselItem) === '')
+                $source   = null;
+                $typeHint = null;
+
+                if (is_string($carouselItem))
+                {
+                    $source = mb_trim($carouselItem);
+                }
+
+                if (is_array($carouselItem))
+                {
+                    $rawSource = $carouselItem['source'] ?? null;
+                    $rawType   = $carouselItem['type']   ?? null;
+
+                    $source   = is_string($rawSource) ? mb_trim($rawSource) : null;
+                    $typeHint = is_string($rawType) ? mb_trim($rawType) : null;
+                }
+
+                if (! is_string($source))
                 {
                     continue;
                 }
 
-                $carouselItem = mb_trim($carouselItem);
-
-                if ($this->isValidUrl($carouselItem))
+                if ($source === '')
                 {
-                    $resolvedCarouselItems[] = $carouselItem;
-
                     continue;
                 }
 
-                $temporary               = $this->makeTemporaryPublicUrlForLocalPath($carouselItem, 'Instagram carousel media');
-                $resolvedCarouselItems[] = $temporary['url'];
-                $cleanupCallbacks[]      = $temporary['cleanup'];
+                $mediaType = $this->inferMediaType($source, $typeHint !== '' ? $typeHint : null);
+
+                if ($this->isValidUrl($source))
+                {
+                    $resolvedCarouselItems[] = [
+                        'url'  => $source,
+                        'type' => $mediaType,
+                    ];
+                } else
+                {
+                    $temporary = $this->makeTemporaryPublicUrlForLocalPath(
+                        $source,
+                        sprintf('Instagram carousel %s media', $mediaType),
+                    );
+                    $resolvedCarouselItems[] = [
+                        'url'  => $temporary['url'],
+                        'type' => $mediaType,
+                    ];
+                    $cleanupCallbacks[] = $temporary['cleanup'];
+                }
+
+                if ($mediaType === 'video')
+                {
+                    $containsCarouselVideo = true;
+                }
             }
         }
 
@@ -570,7 +636,8 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
 
         if ($resolvedCarouselItems !== [])
         {
-            $providerOptions['carousel_items'] = $resolvedCarouselItems;
+            $providerOptions['carousel_items']          = $resolvedCarouselItems;
+            $providerOptions['carousel_contains_video'] = $containsCarouselVideo;
         }
 
         return new SharePayload(
@@ -581,6 +648,20 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
             mediaIds: $sharePayload->mediaIds(),
             providerOptions: $providerOptions,
             metadata: $sharePayload->metadata(),
+            mediaSources: $sharePayload->mediaSources(),
         );
+    }
+
+    /**
+     * @param list<array{url: string, type: string}> $carouselItems
+     */
+    private function assertValidCarouselSize(array $carouselItems): void
+    {
+        $count = count($carouselItems);
+
+        if ($count < 2 || $count > 10)
+        {
+            throw new InvalidSharePayloadException('Instagram carousel must contain between 2 and 10 media items.');
+        }
     }
 }
