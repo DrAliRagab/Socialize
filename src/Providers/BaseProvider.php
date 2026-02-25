@@ -36,7 +36,6 @@ use function is_array;
 use function is_int;
 use function is_readable;
 use function is_string;
-use function mb_strlen;
 use function parse_url;
 use function pathinfo;
 
@@ -45,6 +44,7 @@ use const PHP_URL_PATH;
 
 use function sprintf;
 use function str_contains;
+use function strlen;
 use function sys_get_temp_dir;
 
 use Throwable;
@@ -388,7 +388,7 @@ abstract class BaseProvider
                 'contents'  => $contents,
                 'mime_type' => $this->normalizeContentType($response->header('Content-Type')),
                 'file_name' => $fileName,
-                'size'      => mb_strlen($contents),
+                'size'      => strlen($contents),
             ];
         }
 
@@ -417,7 +417,7 @@ abstract class BaseProvider
             'contents'  => $contents,
             'mime_type' => $mimeType,
             'file_name' => $fileName,
-            'size'      => mb_strlen($contents),
+            'size'      => strlen($contents),
         ];
     }
 

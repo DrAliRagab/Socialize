@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DrAliRagab\Socialize\Providers;
 
+use function base64_encode;
+
 use DrAliRagab\Socialize\Contracts\ProviderDriver;
 use DrAliRagab\Socialize\Enums\Provider;
 use DrAliRagab\Socialize\Exceptions\ApiException;
@@ -17,9 +19,9 @@ use Illuminate\Support\Facades\Http;
 
 use function in_array;
 use function is_array;
+use function is_bool;
 use function is_int;
 use function is_string;
-use function mb_strlen;
 use function pathinfo;
 
 use const PATHINFO_EXTENSION;
@@ -27,6 +29,8 @@ use const PHP_EOL;
 
 use function sprintf;
 use function str_contains;
+use function strlen;
+use function substr;
 use function usleep;
 
 final class TwitterProvider extends BaseProvider implements ProviderDriver
@@ -202,15 +206,22 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
 
             $mediaType = $this->inferMediaType($source, $typeHint, $media['mime_type']);
             $mimeType  = $this->resolveMimeType($media['mime_type'], $mediaType, $media['file_name']);
-            $mediaId   = $this->uploadInit($media['size'], $mimeType, $mediaType);
 
-            $chunkSize = 5 * 1024 * 1024;
+            if ($mediaType === 'image')
+            {
+                return $this->uploadImage($media['contents'], $mimeType);
+            }
+
+            $mediaId = $this->uploadInit($media['size'], $mimeType, $mediaType);
+
+            // X chunked APPEND expects chunks up to 1 MB.
+            $chunkSize = 1024 * 1024;
             $offset    = 0;
             $segment   = 0;
 
             while ($offset < $media['size'])
             {
-                $chunk = mb_substr($media['contents'], $offset, $chunkSize);
+                $chunk = substr($media['contents'], $offset, $chunkSize);
 
                 if ($chunk === '')
                 {
@@ -218,7 +229,7 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
                 }
 
                 $this->uploadAppend($mediaId, $segment, $chunk, $media['file_name']);
-                $offset += mb_strlen($chunk);
+                $offset += strlen($chunk);
                 $segment++;
             }
 
@@ -231,12 +242,12 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
         }
     }
 
-    private function uploadInit(int $size, string $mimeType, string $mediaType): string
+    private function uploadImage(string $contents, string $mimeType): string
     {
-        $response = $this->decode($this->send('POST', '/2/media/upload/initialize', [
-            'total_bytes'    => $size,
+        $response = $this->decode($this->send('POST', '/2/media/upload', [
+            'media'          => base64_encode($contents),
+            'media_category' => $mimeType === 'image/gif' ? 'tweet_gif' : 'tweet_image',
             'media_type'     => $mimeType,
-            'media_category' => $this->resolveMediaCategory($mediaType, $mimeType),
             'shared'         => false,
         ], $this->headers()));
 
@@ -250,41 +261,97 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
 
         if (! is_string($mediaId) || $mediaId === '')
         {
-            throw ApiException::invalidResponse($this->provider(), 'X media upload init did not return a media id.');
+            throw ApiException::invalidResponse($this->provider(), 'X image upload did not return a media id.');
         }
 
         return $mediaId;
     }
 
+    private function uploadInit(int $size, string $mimeType, string $mediaType): string
+    {
+        $categories = [$this->resolveMediaCategory($mediaType, $mimeType)];
+
+        if ($mediaType === 'video' && ! in_array('amplify_video', $categories, true))
+        {
+            $categories[] = 'amplify_video';
+        }
+
+        foreach ($categories as $category)
+        {
+            try
+            {
+                $response = $this->uploadCommand([
+                    'command'        => 'INIT',
+                    'total_bytes'    => $size,
+                    'media_type'     => $mimeType,
+                    'media_category' => $category,
+                ]);
+            } catch (ApiException $exception)
+            {
+                if ($exception->status() !== 400)
+                {
+                    throw $exception;
+                }
+
+                $response = $this->uploadInitViaEndpoint($size, $mimeType, $category);
+            }
+
+            $mediaId = $this->extractMediaId($response);
+
+            if ($mediaId !== null)
+            {
+                return $mediaId;
+            }
+        }
+
+        throw ApiException::invalidResponse($this->provider(), 'X media upload init did not return a media id.');
+    }
+
     private function uploadAppend(string $mediaId, int $segment, string $chunk, string $fileName): void
     {
-        $response = Http::withHeaders($this->headers())
-            ->baseUrl($this->baseUrl())
-            ->timeout($this->intConfig('timeout', 15))
-            ->connectTimeout($this->intConfig('connect_timeout', 10))
-            ->retry(
-                $this->intConfig('retries', 1),
-                $this->intConfig('retry_sleep_ms', 150),
-                throw: false,
-            )
-            ->attach('media', $chunk, $fileName)
-            ->post(sprintf('/2/media/upload/%s/append', $mediaId), [
+        try
+        {
+            $this->uploadCommand([
+                'command'       => 'APPEND',
                 'media_id'      => $mediaId,
                 'segment_index' => $segment,
-            ])
-        ;
-
-        if ($response->failed())
+            ], $chunk, $fileName);
+        } catch (ApiException $apiException)
         {
-            throw ApiException::fromResponse($this->provider(), $response);
+            if ($apiException->status() !== 400)
+            {
+                throw $apiException;
+            }
+
+            $this->uploadAppendViaEndpoint($mediaId, $segment, $chunk, $fileName);
         }
     }
 
     private function uploadFinalizeAndWait(string $mediaId): void
     {
-        $finalizeResponse = $this->decode($this->send('POST', sprintf('/2/media/upload/%s/finalize', $mediaId), [], $this->headers()));
-        $data             = $finalizeResponse['data'] ?? null;
-        $processing       = is_array($data) ? ($data['processing_info'] ?? null) : null;
+        try
+        {
+            $finalizeResponse = $this->uploadCommand([
+                'command'  => 'FINALIZE',
+                'media_id' => $mediaId,
+            ]);
+        } catch (ApiException $apiException)
+        {
+            if ($apiException->status() !== 400)
+            {
+                throw $apiException;
+            }
+
+            $finalizeResponse = $this->decode($this->send(
+                'POST',
+                sprintf('/2/media/upload/%s/finalize', $mediaId),
+                [],
+                $this->headers(),
+            ));
+        }
+
+        $data       = $finalizeResponse['data'] ?? null;
+        $processing = is_array($data) ? ($data['processing_info'] ?? null) : null;
 
         if (! is_array($processing))
         {
@@ -429,5 +496,128 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
         }
 
         return $mimeType === 'image/gif' ? 'tweet_gif' : 'tweet_image';
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function uploadInitViaEndpoint(int $size, string $mimeType, string $category): array
+    {
+        return $this->decode($this->send(
+            'POST',
+            '/2/media/upload/initialize',
+            [
+                'total_bytes'    => $size,
+                'media_type'     => $mimeType,
+                'media_category' => $category,
+            ],
+            $this->headers(),
+        ));
+    }
+
+    private function uploadAppendViaEndpoint(string $mediaId, int $segment, string $chunk, string $fileName): void
+    {
+        $response = Http::withHeaders($this->headers())
+            ->baseUrl($this->baseUrl())
+            ->timeout($this->intConfig('timeout', 15))
+            ->connectTimeout($this->intConfig('connect_timeout', 10))
+            ->retry(
+                $this->intConfig('retries', 1),
+                $this->intConfig('retry_sleep_ms', 150),
+                throw: false,
+            )
+            ->attach('media', $chunk, $fileName)
+            ->post(sprintf('/2/media/upload/%s/append', $mediaId), [
+                'segment_index' => $segment,
+            ])
+        ;
+
+        if ($response->failed())
+        {
+            throw ApiException::fromResponse($this->provider(), $response);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $response
+     */
+    private function extractMediaId(array $response): ?string
+    {
+        $data    = $response['data'] ?? null;
+        $mediaId = is_array($data) ? ($data['id'] ?? null) : null;
+
+        if (! is_string($mediaId) || $mediaId === '')
+        {
+            $mediaId = $response['media_id_string'] ?? $response['media_id'] ?? null;
+        }
+
+        if (! is_string($mediaId) || $mediaId === '')
+        {
+            return null;
+        }
+
+        return $mediaId;
+    }
+
+    /**
+     * @param array<string, mixed> $fields
+     * @return array<string, mixed>
+     */
+    private function uploadCommand(array $fields, ?string $chunk = null, ?string $fileName = null): array
+    {
+        $pending = Http::withHeaders($this->headers())
+            ->baseUrl($this->baseUrl())
+            ->timeout($this->intConfig('timeout', 15))
+            ->connectTimeout($this->intConfig('connect_timeout', 10))
+            ->retry(
+                $this->intConfig('retries', 1),
+                $this->intConfig('retry_sleep_ms', 150),
+                throw: false,
+            )
+        ;
+
+        if (is_string($chunk))
+        {
+            $pending  = $pending->attach('media', $chunk, $fileName ?? 'media.bin');
+            $response = $pending->post('/2/media/upload', $fields);
+        } else
+        {
+            /** @var array<int, array{name: string, contents: string}> $multipart */
+            $multipart = [];
+
+            foreach ($fields as $name => $value)
+            {
+                if (is_bool($value))
+                {
+                    $value = $value ? 'true' : 'false';
+                }
+
+                if (is_int($value))
+                {
+                    $value = (string)$value;
+                }
+
+                if (! is_string($value))
+                {
+                    continue;
+                }
+
+                $multipart[] = [
+                    'name'     => (string)$name,
+                    'contents' => $value,
+                ];
+            }
+
+            $response = $pending->send('POST', '/2/media/upload', [
+                'multipart' => $multipart,
+            ]);
+        }
+
+        if ($response->failed())
+        {
+            throw ApiException::fromResponse($this->provider(), $response);
+        }
+
+        return $this->decode($response);
     }
 }

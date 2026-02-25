@@ -29,6 +29,7 @@ use function rawurlencode;
 use function sprintf;
 use function str_contains;
 use function str_starts_with;
+use function substr;
 
 final class LinkedInProvider extends BaseProvider implements ProviderDriver
 {
@@ -408,7 +409,7 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
                 }
 
                 $length = ($lastByte - $firstByte) + 1;
-                $chunk  = mb_substr($contents, $firstByte, $length);
+                $chunk  = substr($contents, $firstByte, $length);
 
                 if ($chunk === '')
                 {

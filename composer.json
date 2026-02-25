@@ -58,8 +58,14 @@
         "test": "vendor/bin/pest",
         "test-coverage": "vendor/bin/pest --coverage --min=95",
         "format": "vendor/bin/pint",
-        "rector:default": "vendor/bin/rector process --config rector.default.php --ansi",
-        "rector": "vendor/bin/rector process --config rector.php --ansi"
+        "rector": "vendor/bin/rector process --config rector.php --ansi",
+        "check": [
+            "@rector",
+            "@format",
+            "@analyse",
+            "@test",
+            "@test-coverage"
+        ]
     },
     "config": {
         "sort-packages": true,

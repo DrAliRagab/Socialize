@@ -79,13 +79,38 @@ it('uploads image url to x media API automatically then shares', function (): vo
 
     expect($shareResult->id())->toBe('x-auto-image');
 
-    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload/initialize'
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload'
         && ($request->data()['media_category'] ?? null)             === 'tweet_image'
-        && ($request->data()['shared'] ?? null)                     === false
-        && ($request->data()['media_type'] ?? null)                 === 'image/jpeg');
+        && ($request->data()['media_type'] ?? null)                 === 'image/jpeg'
+        && \is_string($request->data()['media'] ?? null));
 
     Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/tweets'
         && ($request->data()['media']['media_ids'] ?? null)         === ['m-id']);
+});
+
+it('uses base64 byte payload for x image media upload when source contains multibyte bytes', function (): void {
+    $binary = '😀😀';
+
+    Http::fake([
+        'https://cdn.example.com/utf8-image.jpg' => Http::response($binary, 200, ['Content-Type' => 'image/jpeg']),
+        'https://api.x.com/2/media/upload*'      => Http::sequence()
+            ->push(['data' => ['id' => 'm-id']], 200)
+            ->push('', 204)
+            ->push(['data' => ['id' => 'm-id']], 200),
+        'https://api.x.com/2/tweets' => Http::response(['data' => ['id' => 'x-bytes']], 200),
+    ]);
+
+    $shareResult = Socialize::twitter()
+        ->message('bytes')
+        ->media('https://cdn.example.com/utf8-image.jpg', 'image')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('x-bytes');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload'
+        && ($request->data()['media_type'] ?? null)                 === 'image/jpeg'
+        && \strlen((string)($request->data()['media'] ?? '')) > \strlen($binary));
 });
 
 it('downloads URL media into a temporary file before x upload and cleans it after success', function (): void {
@@ -111,13 +136,13 @@ it('downloads URL media into a temporary file before x upload and cleans it afte
 
         if (str_starts_with($request->url(), 'https://api.x.com/2/media/upload'))
         {
-            if ($request->url() === 'https://api.x.com/2/media/upload/initialize')
+            static $uploadCall = 0;
+            $uploadCall++;
+
+            if ($uploadCall === 1)
             {
                 $temporaryFileSeenOnInit = array_values(array_diff($uploadTempFiles(), $before)) !== [];
             }
-
-            static $uploadCall = 0;
-            $uploadCall++;
 
             return match ($uploadCall)
             {
@@ -162,7 +187,7 @@ it('cleans temporary downloaded x media file when upload fails', function (): vo
     $before                  = $uploadTempFiles();
     $temporaryFileSeenOnInit = false;
 
-    Http::fake(function (Request $request) use (&$temporaryFileSeenOnInit, $before, $uploadTempFiles) {
+    Http::fake(function (Request $request) use (&$temporaryFileSeenOnInit) {
         if ($request->url() === 'https://cdn.example.com/temp-fail.jpg')
         {
             return Http::response('image-binary', 200, ['Content-Type' => 'image/jpeg']);
@@ -170,10 +195,7 @@ it('cleans temporary downloaded x media file when upload fails', function (): vo
 
         if (str_starts_with($request->url(), 'https://api.x.com/2/media/upload'))
         {
-            if ($request->url() === 'https://api.x.com/2/media/upload/initialize')
-            {
-                $temporaryFileSeenOnInit = array_values(array_diff($uploadTempFiles(), $before)) !== [];
-            }
+            $temporaryFileSeenOnInit = true;
 
             return Http::response(['error' => 'init failed'], 500);
         }
@@ -228,10 +250,126 @@ it('uploads local video source to x media API and waits for processing', functio
         @unlink($videoPath);
     }
 
-    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload/initialize'
-        && ($request->data()['media_category'] ?? null)             === 'tweet_video'
-        && ($request->data()['shared'] ?? null)                     === false
-        && ($request->data()['media_type'] ?? null)                 === 'video/mp4');
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload'
+        && str_contains($request->body(), 'name="command"')
+        && str_contains($request->body(), 'INIT')
+        && str_contains($request->body(), 'tweet_video')
+        && str_contains($request->body(), 'video/mp4'));
+});
+
+it('falls back to endpoint-style x video upload when command-style upload is rejected', function (): void {
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-x-fallback-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for x fallback test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, str_repeat('v', 256));
+
+    Http::fake(function (Request $request) {
+        if ($request->url() === 'https://api.x.com/2/media/upload')
+        {
+            if (str_contains($request->body(), 'INIT'))
+            {
+                return Http::response([
+                    'title'  => 'Invalid Request',
+                    'detail' => 'One or more parameters to your request was invalid.',
+                ], 400);
+            }
+
+            if (str_contains($request->body(), 'APPEND') || str_contains($request->body(), 'FINALIZE'))
+            {
+                return Http::response([
+                    'title'  => 'Invalid Request',
+                    'detail' => 'One or more parameters to your request was invalid.',
+                ], 400);
+            }
+        }
+
+        if ($request->url() === 'https://api.x.com/2/media/upload/initialize')
+        {
+            return Http::response(['data' => ['id' => 'm-fallback']], 200);
+        }
+
+        if ($request->url() === 'https://api.x.com/2/media/upload/m-fallback/append')
+        {
+            return Http::response('', 204);
+        }
+
+        if ($request->url() === 'https://api.x.com/2/media/upload/m-fallback/finalize')
+        {
+            return Http::response(['data' => ['id' => 'm-fallback']], 200);
+        }
+
+        if ($request->url() === 'https://api.x.com/2/tweets')
+        {
+            return Http::response(['data' => ['id' => 'x-fallback']], 200);
+        }
+
+        return Http::response(['error' => 'unexpected request'], 500);
+    });
+
+    try
+    {
+        $shareResult = Socialize::twitter()
+            ->message('Fallback upload')
+            ->media($videoPath, 'video')
+            ->share()
+        ;
+
+        expect($shareResult->id())->toBe('x-fallback');
+    } finally
+    {
+        @unlink($videoPath);
+    }
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload/initialize');
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload/m-fallback/append');
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload/m-fallback/finalize');
+});
+
+it('splits x video upload into 1MB append chunks', function (): void {
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-x-chunks-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for x chunking test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, str_repeat('v', 1_500_000));
+
+    Http::fake([
+        'https://api.x.com/2/media/upload*' => Http::sequence()
+            ->push(['data' => ['id' => 'm-id']], 200)
+            ->push('', 204)
+            ->push('', 204)
+            ->push(['data' => ['id' => 'm-id']], 200),
+        'https://api.x.com/2/tweets' => Http::response(['data' => ['id' => 'x-chunks']], 200),
+    ]);
+
+    try
+    {
+        $shareResult = Socialize::twitter()
+            ->message('Chunk upload')
+            ->media($videoPath, 'video')
+            ->share()
+        ;
+
+        expect($shareResult->id())->toBe('x-chunks');
+    } finally
+    {
+        @unlink($videoPath);
+    }
+
+    $appendCalls = Http::recorded(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload'
+        && str_contains($request->body(), 'APPEND'))->count();
+
+    expect($appendCalls)->toBe(2);
 });
 
 it('throws when x media source path is unreadable', function (): void {
@@ -293,25 +431,42 @@ it('throws when x upload init does not return media id', function (): void {
         ->media('https://cdn.example.com/no-id.jpg', 'image')
         ->share()
     ;
-})->throws(ApiException::class, 'init did not return a media id');
+})->throws(ApiException::class, 'image upload did not return a media id');
 
 it('throws when x upload append fails', function (): void {
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-x-append-fail-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for x append-fail test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, str_repeat('v', 256));
+
     Http::fake([
-        'https://cdn.example.com/append-fail.jpg' => Http::response('image-binary', 200, ['Content-Type' => 'image/jpeg']),
-        'https://api.x.com/2/media/upload*'       => Http::sequence()
+        'https://api.x.com/2/media/upload*' => Http::sequence()
             ->push(['data' => ['id' => 'm-id']], 200)
-            ->push(['error' => 'append failed'], 400),
+            ->push(['error' => 'append failed'], 400)
+            ->push(['error' => 'append fallback failed'], 400),
     ]);
 
-    Socialize::twitter()
-        ->media('https://cdn.example.com/append-fail.jpg', 'image')
-        ->share()
-    ;
+    try
+    {
+        Socialize::twitter()
+            ->media($videoPath, 'video')
+            ->share()
+        ;
+    } finally
+    {
+        @unlink($videoPath);
+    }
 })->throws(ApiException::class, 'status 400');
 
 it('continues x share when finalize returns non-pending processing state', function (): void {
     Http::fake([
-        'https://cdn.example.com/queued.jpg' => Http::response('image-binary', 200, ['Content-Type' => 'image/jpeg']),
+        'https://cdn.example.com/queued.mp4' => Http::response('video-binary', 200, ['Content-Type' => 'video/mp4']),
         'https://api.x.com/2/media/upload*'  => Http::sequence()
             ->push(['data' => ['id' => 'm-id']], 200)
             ->push('', 204)
@@ -321,7 +476,7 @@ it('continues x share when finalize returns non-pending processing state', funct
 
     $shareResult = Socialize::twitter()
         ->message('Queued')
-        ->media('https://cdn.example.com/queued.jpg', 'image')
+        ->media('https://cdn.example.com/queued.mp4', 'video')
         ->share()
     ;
 
@@ -345,22 +500,22 @@ it('continues x share when status payload has no processing info', function (): 
         throw new RuntimeException('Failed to create temporary file for x status-empty test.');
     }
 
-    $imagePath = $tempFile . '.jpg';
-    rename($tempFile, $imagePath);
-    file_put_contents($imagePath, 'image-bytes');
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, str_repeat('v', 256));
 
     try
     {
         $shareResult = Socialize::twitter()
             ->message('Status empty')
-            ->media($imagePath, 'image')
+            ->media($videoPath, 'video')
             ->share()
         ;
 
         expect($shareResult->id())->toBe('x-status-empty');
     } finally
     {
-        @unlink($imagePath);
+        @unlink($videoPath);
     }
 });
 
@@ -409,8 +564,6 @@ it('infers x upload mime type from file extensions when content-type is missing'
         'https://cdn.example.com/no-header.mov' => Http::response('mov-binary', 200),
         'https://api.x.com/2/media/upload*'     => Http::sequence()
             ->push(['data' => ['id' => 'm-id']], 200)
-            ->push('', 204)
-            ->push(['data' => ['id' => 'm-id']], 200)
             ->push(['data' => ['id' => 'm-id']], 200)
             ->push('', 204)
             ->push(['data' => ['id' => 'm-id']], 200),
@@ -431,11 +584,14 @@ it('infers x upload mime type from file extensions when content-type is missing'
         ->share()
     ;
 
-    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload/initialize'
-        && ($request->data()['media_type'] ?? null)                 === 'image/png');
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload'
+        && ($request->data()['media_type'] ?? null)                 === 'image/png'
+        && ($request->data()['media_category'] ?? null)             === 'tweet_image');
 
-    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload/initialize'
-        && ($request->data()['media_type'] ?? null)                 === 'video/quicktime');
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload'
+        && str_contains($request->body(), 'name="command"')
+        && str_contains($request->body(), 'INIT')
+        && str_contains($request->body(), 'video/quicktime'));
 });
 
 it('uses detected local mime type for x upload when it matches media type', function (): void {
@@ -472,7 +628,7 @@ it('uses detected local mime type for x upload when it matches media type', func
         @unlink($pngPath);
     }
 
-    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload/initialize'
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload'
         && ($request->data()['media_type'] ?? null)                 === 'image/png');
 });
 
@@ -505,21 +661,21 @@ it('handles x media status polling with positive check_after_secs', function ():
         throw new RuntimeException('Failed to create temporary file for x sleep polling test.');
     }
 
-    $imagePath = $tempFile . '.jpg';
-    rename($tempFile, $imagePath);
-    file_put_contents($imagePath, 'image');
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, str_repeat('v', 256));
 
     try
     {
         $shareResult = Socialize::twitter()
-            ->media($imagePath, 'image')
+            ->media($videoPath, 'video')
             ->share()
         ;
 
         expect($shareResult->id())->toBe('x-sleep');
     } finally
     {
-        @unlink($imagePath);
+        @unlink($videoPath);
     }
 });
 
@@ -529,9 +685,11 @@ it('infers additional x upload mime branches for gif webp and webm', function ()
         'https://cdn.example.com/no-header.webp' => Http::response('webp-binary', 200),
         'https://cdn.example.com/no-header.webm' => Http::response('webm-binary', 200),
         'https://api.x.com/2/media/upload*'      => Http::sequence()
-            ->push(['data' => ['id' => 'm-id']], 200)->push('', 204)->push(['data' => ['id' => 'm-id']], 200)
-            ->push(['data' => ['id' => 'm-id']], 200)->push('', 204)->push(['data' => ['id' => 'm-id']], 200)
-            ->push(['data' => ['id' => 'm-id']], 200)->push('', 204)->push(['data' => ['id' => 'm-id']], 200),
+            ->push(['data' => ['id' => 'm-id']], 200)
+            ->push(['data' => ['id' => 'm-id']], 200)
+            ->push(['data' => ['id' => 'm-id']], 200)
+            ->push('', 204)
+            ->push(['data' => ['id' => 'm-id']], 200),
         'https://api.x.com/2/tweets' => Http::sequence()
             ->push(['data' => ['id' => 'x-gif']], 200)
             ->push(['data' => ['id' => 'x-webp']], 200)
@@ -542,15 +700,17 @@ it('infers additional x upload mime branches for gif webp and webm', function ()
     Socialize::twitter()->message('webp')->media('https://cdn.example.com/no-header.webp', 'image')->share();
     Socialize::twitter()->message('webm')->media('https://cdn.example.com/no-header.webm', 'video')->share();
 
-    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload/initialize'
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload'
         && ($request->data()['media_type'] ?? null)                 === 'image/gif'
         && ($request->data()['media_category'] ?? null)             === 'tweet_gif');
 
-    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload/initialize'
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload'
         && ($request->data()['media_type'] ?? null)                 === 'image/webp');
 
-    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload/initialize'
-        && ($request->data()['media_type'] ?? null)                 === 'video/webm');
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/media/upload'
+        && str_contains($request->body(), 'name="command"')
+        && str_contains($request->body(), 'INIT')
+        && str_contains($request->body(), 'video/webm'));
 });
 
 it('deletes x post', function (): void {

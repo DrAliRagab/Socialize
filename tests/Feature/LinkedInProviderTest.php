@@ -297,6 +297,78 @@ it('auto uploads linkedin video media from local file and finalizes upload', fun
         && ($request->data()['content']['media']['id'] ?? null)     === 'urn:li:video:auto-1');
 });
 
+it('uses byte offsets for linkedin video upload instructions when media contains multibyte bytes', function (): void {
+    $binary = '😀ABC';
+    $chunks = [];
+
+    Http::fake(function (Request $request) use ($binary, &$chunks) {
+        if ($request->url() === 'https://cdn.example.com/utf8-video.mp4')
+        {
+            return Http::response($binary, 200, ['Content-Type' => 'video/mp4']);
+        }
+
+        if ($request->url() === 'https://api.linkedin.com/rest/videos?action=initializeUpload')
+        {
+            return Http::response([
+                'value' => [
+                    'video'              => 'urn:li:video:utf8-bytes',
+                    'uploadToken'        => 'token-utf8',
+                    'uploadInstructions' => [
+                        ['uploadUrl' => 'https://upload.linkedin.com/utf8-part-1', 'firstByte' => 0, 'lastByte' => 3],
+                        ['uploadUrl' => 'https://upload.linkedin.com/utf8-part-2', 'firstByte' => 4, 'lastByte' => 6],
+                    ],
+                ],
+            ], 200);
+        }
+
+        if ($request->url() === 'https://upload.linkedin.com/utf8-part-1')
+        {
+            $chunks[] = $request->body();
+
+            return Http::response('', 201, ['ETag' => '"etag-1"']);
+        }
+
+        if ($request->url() === 'https://upload.linkedin.com/utf8-part-2')
+        {
+            $chunks[] = $request->body();
+
+            return Http::response('', 201, ['ETag' => '"etag-2"']);
+        }
+
+        if ($request->url() === 'https://api.linkedin.com/rest/videos?action=finalizeUpload')
+        {
+            return Http::response(['value' => ['success' => true]], 200);
+        }
+
+        if ($request->url() === 'https://api.linkedin.com/rest/videos/urn%3Ali%3Avideo%3Autf8-bytes')
+        {
+            return Http::response(['status' => 'AVAILABLE'], 200);
+        }
+
+        if ($request->url() === 'https://api.linkedin.com/rest/posts')
+        {
+            return Http::response(['id' => 'urn:li:share:utf8-bytes'], 201);
+        }
+
+        return Http::response(['error' => 'unexpected request'], 500);
+    });
+
+    $shareResult = Socialize::linkedin()
+        ->message('utf8 bytes')
+        ->media('https://cdn.example.com/utf8-video.mp4', 'video')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('urn:li:share:utf8-bytes')
+        ->and($chunks)->toHaveCount(2)
+        ->and($chunks[0])->toBe(substr($binary, 0, 4))
+        ->and($chunks[1])->toBe(substr($binary, 4, 3))
+    ;
+
+    Http::assertSent(fn (Request $request): bool => $request->url()               === 'https://api.linkedin.com/rest/videos?action=finalizeUpload'
+        && ($request->data()['finalizeUploadRequest']['uploadedPartIds'] ?? null) === ['etag-1', 'etag-2']);
+});
+
 it('uses detected local mime type for linkedin media upload when it matches media type', function (): void {
     $tempFile = tempnam(sys_get_temp_dir(), 'socialize-li-real-png-');
 
@@ -581,6 +653,40 @@ it('throws when linkedin video initialize has invalid instructions and no fallba
 
     Socialize::linkedin()->media('https://cdn.example.com/no-fallback.mp4', 'video')->share();
 })->throws(ApiException::class, 'missing upload instructions');
+
+it('skips invalid linkedin video upload instructions and uses fallback upload url', function (): void {
+    Http::fake([
+        'https://cdn.example.com/*'                                    => Http::response('video-binary', 200, ['Content-Type' => 'video/mp4']),
+        'https://api.linkedin.com/rest/videos?action=initializeUpload' => Http::response([
+            'value' => [
+                'video'              => 'urn:li:video:invalid-instructions',
+                'uploadToken'        => 'token-invalid-instructions',
+                'uploadUrl'          => 'https://upload.linkedin.com/fallback-invalid-instructions',
+                'uploadInstructions' => [
+                    ['uploadUrl' => 123, 'firstByte' => 0, 'lastByte' => 1],
+                    ['uploadUrl' => 'https://upload.linkedin.com/invalid-first', 'firstByte' => '0', 'lastByte' => 1],
+                    ['uploadUrl' => 'https://upload.linkedin.com/invalid-last', 'firstByte' => 0, 'lastByte' => '1'],
+                    ['uploadUrl' => 'https://upload.linkedin.com/invalid-negative', 'firstByte' => -1, 'lastByte' => 1],
+                    ['uploadUrl' => 'https://upload.linkedin.com/invalid-range', 'firstByte' => 2, 'lastByte' => 1],
+                ],
+            ],
+        ], 200),
+        'https://upload.linkedin.com/fallback-invalid-instructions'                    => Http::response('', 201, ['ETag' => '"etag-fallback-invalid"']),
+        'https://api.linkedin.com/rest/videos?action=finalizeUpload'                   => Http::response(['value' => ['success' => true]], 200),
+        'https://api.linkedin.com/rest/videos/urn%3Ali%3Avideo%3Ainvalid-instructions' => Http::response(['status' => 'AVAILABLE'], 200),
+        'https://api.linkedin.com/rest/posts'                                          => Http::response(['id' => 'urn:li:share:invalid-instructions'], 201),
+    ]);
+
+    $shareResult = Socialize::linkedin()
+        ->message('Fallback upload')
+        ->media('https://cdn.example.com/invalid-instructions.mp4', 'video')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('urn:li:share:invalid-instructions');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://upload.linkedin.com/fallback-invalid-instructions');
+});
 
 it('throws when linkedin video upload instruction resolves to empty chunk', function (): void {
     $tempFile = tempnam(sys_get_temp_dir(), 'socialize-li-empty-chunk-');
