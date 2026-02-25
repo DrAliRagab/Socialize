@@ -21,11 +21,23 @@ abstract class TestCase extends Orchestra
 
     protected function getEnvironmentSetUp($app): void
     {
+        $app['config']->set('app.url', 'https://example.test');
+        $app['config']->set('filesystems.default', 'local');
+        $app['config']->set('filesystems.disks.public', [
+            'driver'     => 'local',
+            'root'       => storage_path('app/public'),
+            'url'        => 'https://example.test/storage',
+            'visibility' => 'public',
+        ]);
+
         $app['config']->set('socialize.default_profile', 'default');
         $app['config']->set('socialize.http.timeout', 5);
         $app['config']->set('socialize.http.connect_timeout', 5);
         $app['config']->set('socialize.http.retries', 1);
         $app['config']->set('socialize.http.retry_sleep_ms', 1);
+        $app['config']->set('socialize.temporary_media.disk', 'public');
+        $app['config']->set('socialize.temporary_media.directory', 'socialize-temp');
+        $app['config']->set('socialize.temporary_media.visibility', 'public');
 
         $app['config']->set('socialize.providers.facebook', [
             'base_url'      => 'https://graph.facebook.com',

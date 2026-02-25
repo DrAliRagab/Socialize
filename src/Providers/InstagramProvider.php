@@ -11,8 +11,6 @@ use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\ValueObjects\SharePayload;
 use DrAliRagab\Socialize\ValueObjects\ShareResult;
 
-use const FILTER_VALIDATE_URL;
-
 use function is_array;
 use function is_string;
 
@@ -36,47 +34,59 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
             throw new InvalidSharePayloadException('Instagram share requires imageUrl, videoUrl, or carousel items.');
         }
 
-        $igId        = (string)$this->credential('ig_id');
-        $accessToken = (string)$this->credential('access_token');
-        $version     = $this->graphVersion();
+        $igId             = (string)$this->credential('ig_id');
+        $accessToken      = (string)$this->credential('access_token');
+        $version          = $this->graphVersion();
+        $cleanupCallbacks = [];
 
-        /** @var list<string>|null $carouselItems */
-        $carouselItems = $sharePayload->option('carousel_items');
-
-        if (is_array($carouselItems) && $carouselItems !== [])
+        try
         {
-            $creationId = $this->createCarouselContainer($igId, $accessToken, $version, $sharePayload, $carouselItems);
-        } else
-        {
-            $creationId = $this->createSingleContainer($igId, $accessToken, $version, $sharePayload);
-        }
+            $resolvedPayload = $this->resolveMediaPayload($sharePayload, $cleanupCallbacks);
 
-        $publishResponse = $this->decode($this->send('POST', sprintf('/%s/%s/media_publish', $version, $igId), [
-            'access_token' => $accessToken,
-            'creation_id'  => $creationId,
-        ]));
+            /** @var list<string>|null $carouselItems */
+            $carouselItems = $resolvedPayload->option('carousel_items');
 
-        $id = $publishResponse['id'] ?? null;
+            if (is_array($carouselItems) && $carouselItems !== [])
+            {
+                $creationId = $this->createCarouselContainer($igId, $accessToken, $version, $resolvedPayload, $carouselItems);
+            } else
+            {
+                $creationId = $this->createSingleContainer($igId, $accessToken, $version, $resolvedPayload);
+            }
 
-        if (! is_string($id) || $id === '')
-        {
-            $statusDetail = $this->containerStatusDetail($creationId, $accessToken, $version);
+            $publishResponse = $this->decode($this->send('POST', sprintf('/%s/%s/media_publish', $version, $igId), [
+                'access_token' => $accessToken,
+                'creation_id'  => $creationId,
+            ]));
 
-            throw ApiException::invalidResponse(
-                $this->provider(),
-                sprintf('Instagram API did not return a media id after publishing.%s', $statusDetail),
+            $id = $publishResponse['id'] ?? null;
+
+            if (! is_string($id) || $id === '')
+            {
+                $statusDetail = $this->containerStatusDetail($creationId, $accessToken, $version);
+
+                throw ApiException::invalidResponse(
+                    $this->provider(),
+                    sprintf('Instagram API did not return a media id after publishing.%s', $statusDetail),
+                );
+            }
+
+            return new ShareResult(
+                provider: $this->provider(),
+                id: $id,
+                url: null,
+                raw: [
+                    'container_id' => $creationId,
+                    'publish'      => $publishResponse,
+                ],
             );
+        } finally
+        {
+            foreach ($cleanupCallbacks as $cleanupCallback)
+            {
+                $cleanupCallback();
+            }
         }
-
-        return new ShareResult(
-            provider: $this->provider(),
-            id: $id,
-            url: null,
-            raw: [
-                'container_id' => $creationId,
-                'publish'      => $publishResponse,
-            ],
-        );
     }
 
     public function delete(string $postId): bool
@@ -123,7 +133,6 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
 
         if ($sharePayload->imageUrl() !== null)
         {
-            $this->ensureUrl($sharePayload->imageUrl(), 'imageUrl');
             $data['image_url'] = $sharePayload->imageUrl();
 
             $altText = $sharePayload->option('alt_text');
@@ -134,7 +143,6 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
             }
         } elseif ($sharePayload->videoUrl() !== null)
         {
-            $this->ensureUrl($sharePayload->videoUrl(), 'videoUrl');
             $data['video_url']  = $sharePayload->videoUrl();
             $data['media_type'] = $this->resolveVideoMediaType($sharePayload);
         } else
@@ -162,8 +170,6 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
 
         foreach ($carouselItems as $carouselItem)
         {
-            $this->ensureUrl($carouselItem, 'carousel item URL');
-
             $child = $this->decode($this->send('POST', sprintf('/%s/%s/media', $version, $igId), [
                 'access_token'     => $accessToken,
                 'image_url'        => $carouselItem,
@@ -219,14 +225,6 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
         return $parts === [] ? null : implode(PHP_EOL, $parts);
     }
 
-    private function ensureUrl(?string $value, string $field): void
-    {
-        if ($value === null || filter_var($value, FILTER_VALIDATE_URL) === false)
-        {
-            throw new InvalidSharePayloadException(sprintf('Instagram %s must be a valid URL.', $field));
-        }
-    }
-
     private function containerStatusDetail(string $creationId, string $accessToken, string $version): string
     {
         $statusBody = $this->decode($this->send('GET', sprintf('/%s/%s', $version, $creationId), [
@@ -254,5 +252,91 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
         }
 
         return ' Container status: ' . implode(', ', $parts);
+    }
+
+    /**
+     * @param list<callable(): void> $cleanupCallbacks
+     */
+    private function resolveMediaPayload(SharePayload $sharePayload, array &$cleanupCallbacks): SharePayload
+    {
+        $imageUrl = $sharePayload->imageUrl();
+        $videoUrl = $sharePayload->videoUrl();
+
+        /** @var list<string>|null $carouselItems */
+        $carouselItems         = $sharePayload->option('carousel_items');
+        $resolvedCarouselItems = [];
+
+        if (is_array($carouselItems) && $carouselItems !== [])
+        {
+            foreach ($carouselItems as $carouselItem)
+            {
+                if (mb_trim($carouselItem) === '')
+                {
+                    continue;
+                }
+
+                $carouselItem = mb_trim($carouselItem);
+
+                if ($this->isValidUrl($carouselItem))
+                {
+                    $resolvedCarouselItems[] = $carouselItem;
+
+                    continue;
+                }
+
+                $temporary               = $this->makeTemporaryPublicUrlForLocalPath($carouselItem, 'Instagram carousel media');
+                $resolvedCarouselItems[] = $temporary['url'];
+                $cleanupCallbacks[]      = $temporary['cleanup'];
+            }
+        }
+
+        if ($imageUrl === null && $videoUrl === null && $resolvedCarouselItems === [])
+        {
+            foreach ($this->mediaSourcesFromPayload($sharePayload) as $source)
+            {
+                $mediaType = $this->inferMediaType($source['source'], $source['type'] ?? null);
+
+                if ($mediaType === 'video')
+                {
+                    $videoUrl = $source['source'];
+                } else
+                {
+                    $imageUrl = $source['source'];
+                }
+
+                break;
+            }
+        }
+
+        if (is_string($imageUrl) && mb_trim($imageUrl) !== '' && ! $this->isValidUrl($imageUrl))
+        {
+            $temporary          = $this->makeTemporaryPublicUrlForLocalPath($imageUrl, 'Instagram image media');
+            $imageUrl           = $temporary['url'];
+            $cleanupCallbacks[] = $temporary['cleanup'];
+        }
+
+        if (is_string($videoUrl) && mb_trim($videoUrl) !== '' && ! $this->isValidUrl($videoUrl))
+        {
+            $temporary          = $this->makeTemporaryPublicUrlForLocalPath($videoUrl, 'Instagram video media');
+            $videoUrl           = $temporary['url'];
+            $cleanupCallbacks[] = $temporary['cleanup'];
+        }
+
+        $providerOptions = $sharePayload->providerOptions();
+
+        if ($resolvedCarouselItems !== [])
+        {
+            $providerOptions['carousel_items'] = $resolvedCarouselItems;
+        }
+
+        return new SharePayload(
+            message: $sharePayload->message(),
+            link: $sharePayload->link(),
+            imageUrl: $imageUrl,
+            videoUrl: $videoUrl,
+            mediaIds: $sharePayload->mediaIds(),
+            providerOptions: $providerOptions,
+            metadata: $sharePayload->metadata(),
+        );
     }
 }

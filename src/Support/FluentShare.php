@@ -16,7 +16,9 @@ use DrAliRagab\Socialize\ValueObjects\ShareResult;
 use Illuminate\Support\Carbon;
 
 use function in_array;
+use function is_array;
 use function is_int;
+use function is_string;
 use function sprintf;
 
 final class FluentShare
@@ -111,6 +113,62 @@ final class FluentShare
         }
 
         return $this;
+    }
+
+    public function media(string $source, ?string $mediaType = null): self
+    {
+        $source = mb_trim($source);
+
+        if ($source === '')
+        {
+            throw new InvalidSharePayloadException('media source cannot be empty.');
+        }
+
+        $entry = [
+            'source' => $source,
+        ];
+
+        if ($mediaType !== null)
+        {
+            $mediaType = mb_strtolower(mb_trim($mediaType));
+
+            if ($mediaType === '')
+            {
+                throw new InvalidSharePayloadException('media type cannot be empty when provided.');
+            }
+
+            $entry['type'] = $mediaType;
+        }
+
+        $sources = $this->providerOptions['media_sources'] ?? [];
+
+        if (! is_array($sources))
+        {
+            $sources = [];
+        }
+
+        foreach ($sources as $existing)
+        {
+            if (! is_array($existing))
+            {
+                continue;
+            }
+
+            $existingSource = $existing['source'] ?? null;
+            $existingType   = $existing['type']   ?? null;
+
+            if (
+                is_string($existingSource)
+                && $existingSource === $entry['source']
+                && $existingType   === ($entry['type'] ?? null)
+            ) {
+                return $this;
+            }
+        }
+
+        $sources[] = $entry;
+
+        return $this->option('media_sources', $sources);
     }
 
     /**

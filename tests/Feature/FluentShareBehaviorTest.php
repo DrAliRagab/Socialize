@@ -47,6 +47,16 @@ it('normalizes media ids and rejects empty media id', function (): void {
     Socialize::twitter()->mediaId('');
 })->throws(InvalidSharePayloadException::class, 'mediaId cannot be empty');
 
+it('rejects empty shared media source and media type', function (): void {
+    expect(fn (): mixed => Socialize::twitter()->media('   '))
+        ->toThrow(InvalidSharePayloadException::class, 'media source cannot be empty')
+    ;
+
+    expect(fn (): mixed => Socialize::twitter()->media('/tmp/file.jpg', '   '))
+        ->toThrow(InvalidSharePayloadException::class, 'media type cannot be empty')
+    ;
+});
+
 it('rejects empty provider-specific identifiers', function (): void {
     expect(fn (): mixed => Socialize::instagram()->altText('   '))
         ->toThrow(InvalidSharePayloadException::class, 'altText cannot be empty')
@@ -100,4 +110,47 @@ it('accepts metadata chaining and ignores blank nullable shared values', functio
         return $request->url()         === 'https://api.x.com/2/tweets'
             && ($data['text'] ?? null) === 'https://example.com';
     });
+});
+
+it('deduplicates fluent media sources and ignores invalid pre-seeded media source entries', function (): void {
+    Http::fake([
+        'https://cdn.example.com/dedupe.jpg'               => Http::response('image-binary', 200, ['Content-Type' => 'image/jpeg']),
+        'https://upload.twitter.com/1.1/media/upload.json' => Http::sequence()
+            ->push(['media_id_string' => 'dedupe-media'], 200)
+            ->push('', 204)
+            ->push(['media_id_string' => 'dedupe-media'], 200),
+        'https://api.x.com/2/tweets' => Http::response(['data' => ['id' => 'dedupe-post']], 200),
+    ]);
+
+    $shareResult = Socialize::twitter()
+        ->option('media_sources', 'invalid-entry')
+        ->media('https://cdn.example.com/dedupe.jpg', 'image')
+        ->media('https://cdn.example.com/dedupe.jpg', 'image')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('dedupe-post');
+
+    Http::assertSentCount(5);
+});
+
+it('ignores non-array seeded media_sources entries while deduplicating fluent media entries', function (): void {
+    Http::fake([
+        'https://cdn.example.com/non-array-seeded.jpg'     => Http::response('image-binary', 200, ['Content-Type' => 'image/jpeg']),
+        'https://upload.twitter.com/1.1/media/upload.json' => Http::sequence()
+            ->push(['media_id_string' => 'media-non-array-seeded'], 200)
+            ->push('', 204)
+            ->push(['media_id_string' => 'media-non-array-seeded'], 200),
+        'https://api.x.com/2/tweets' => Http::response(['data' => ['id' => 'post-non-array-seeded']], 200),
+    ]);
+
+    $shareResult = Socialize::twitter()
+        ->option('media_sources', ['bad-entry', ['source' => 'https://cdn.example.com/non-array-seeded.jpg', 'type' => 'image']])
+        ->media('https://cdn.example.com/non-array-seeded.jpg', 'image')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('post-non-array-seeded');
+
+    Http::assertSentCount(5);
 });

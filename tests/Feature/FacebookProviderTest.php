@@ -8,6 +8,7 @@ use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\Facades\Socialize;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 
 it('shares a facebook feed post', function (): void {
     Http::fake([
@@ -31,6 +32,23 @@ it('shares a facebook feed post', function (): void {
         && $request->method()                          === 'POST'
         && ($request->data()['link'] ?? null)          === 'https://example.com/release'
     );
+});
+
+it('parses facebook scheduled_at string option in provider payload', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/*' => Http::response(['id' => 'fb-scheduled-string'], 200),
+    ]);
+
+    $shareResult = Socialize::facebook()
+        ->message('Scheduled via raw option')
+        ->option('scheduled_at', '2026-03-01 12:00:00')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('fb-scheduled-string');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/12345/feed'
+        && \array_key_exists('scheduled_publish_time', $request->data()));
 });
 
 it('shares a facebook photo post', function (): void {
@@ -84,6 +102,80 @@ it('shares a facebook video post', function (): void {
     expect($shareResult->id())->toBe('fb-video');
 
     Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/videos'));
+});
+
+it('shares facebook media from local image file through temporary URL and cleans it up', function (): void {
+    Storage::fake('public');
+
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-fb-image-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for facebook local image test.');
+    }
+
+    $imagePath = $tempFile . '.jpg';
+    rename($tempFile, $imagePath);
+    file_put_contents($imagePath, 'image-bytes');
+
+    Http::fake([
+        'https://graph.facebook.com/*' => Http::response(['post_id' => 'fb-local-photo'], 200),
+    ]);
+
+    try
+    {
+        $shareResult = Socialize::facebook()
+            ->media($imagePath, 'image')
+            ->share()
+        ;
+
+        expect($shareResult->id())->toBe('fb-local-photo');
+    } finally
+    {
+        @unlink($imagePath);
+    }
+
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/photos')
+        && str_contains((string)($request->data()['url'] ?? ''), '/storage/socialize-temp/'));
+
+    expect(Storage::disk('public')->allFiles('socialize-temp'))->toBe([]);
+});
+
+it('shares facebook media from local video file through temporary URL and cleans it up', function (): void {
+    Storage::fake('public');
+
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-fb-video-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for facebook local video test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, 'video-bytes');
+
+    Http::fake([
+        'https://graph.facebook.com/*' => Http::response(['id' => 'fb-local-video'], 200),
+    ]);
+
+    try
+    {
+        $shareResult = Socialize::facebook()
+            ->media($videoPath, 'video')
+            ->share()
+        ;
+
+        expect($shareResult->id())->toBe('fb-local-video');
+    } finally
+    {
+        @unlink($videoPath);
+    }
+
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/videos')
+        && str_contains((string)($request->data()['file_url'] ?? ''), '/storage/socialize-temp/'));
+
+    expect(Storage::disk('public')->allFiles('socialize-temp'))->toBe([]);
 });
 
 it('deletes a facebook post', function (): void {

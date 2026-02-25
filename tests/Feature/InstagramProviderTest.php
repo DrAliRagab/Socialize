@@ -8,6 +8,7 @@ use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\Facades\Socialize;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 
 it('shares instagram image content', function (): void {
     Http::fake([
@@ -121,6 +122,161 @@ it('shares instagram carousel content', function (): void {
     Http::assertSentCount(4);
 });
 
+it('shares instagram image from local file through temporary URL and cleans it up', function (): void {
+    Storage::fake('public');
+
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-ig-image-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for instagram local image test.');
+    }
+
+    $imagePath = $tempFile . '.jpg';
+    rename($tempFile, $imagePath);
+    file_put_contents($imagePath, 'image-bytes');
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-local-1'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-local-1'], 200),
+    ]);
+
+    try
+    {
+        $shareResult = Socialize::instagram()
+            ->media($imagePath, 'image')
+            ->share()
+        ;
+
+        expect($shareResult->id())->toBe('ig-local-1');
+    } finally
+    {
+        @unlink($imagePath);
+    }
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/98765/media'
+        && str_contains((string)($request->data()['image_url'] ?? ''), '/storage/socialize-temp/'));
+
+    expect(Storage::disk('public')->allFiles('socialize-temp'))->toBe([]);
+});
+
+it('shares instagram carousel with local files through temporary URLs and cleans them up', function (): void {
+    Storage::fake('public');
+
+    $tempOne = tempnam(sys_get_temp_dir(), 'socialize-ig-carousel-');
+    $tempTwo = tempnam(sys_get_temp_dir(), 'socialize-ig-carousel-');
+
+    if (! \is_string($tempOne) || ! \is_string($tempTwo))
+    {
+        throw new RuntimeException('Failed to create temporary files for instagram local carousel test.');
+    }
+
+    $imageOne = $tempOne . '.jpg';
+    $imageTwo = $tempTwo . '.jpg';
+    rename($tempOne, $imageOne);
+    rename($tempTwo, $imageTwo);
+    file_put_contents($imageOne, 'image-one');
+    file_put_contents($imageTwo, 'image-two');
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media' => Http::sequence()
+            ->push(['id' => 'child-local-1'], 200)
+            ->push(['id' => 'child-local-2'], 200)
+            ->push(['id' => 'parent-local-1'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-carousel-local-1'], 200),
+    ]);
+
+    try
+    {
+        $shareResult = Socialize::instagram()
+            ->message('Carousel local')
+            ->carousel([$imageOne, $imageTwo])
+            ->share()
+        ;
+
+        expect($shareResult->id())->toBe('ig-carousel-local-1');
+    } finally
+    {
+        @unlink($imageOne);
+        @unlink($imageTwo);
+    }
+
+    Http::assertSentCount(4);
+    expect(Storage::disk('public')->allFiles('socialize-temp'))->toBe([]);
+});
+
+it('shares instagram video from fluent media source', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-video-media'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-video-media'], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->message('Video from media')
+        ->media('https://cdn.example.com/from-media.mp4', 'video')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-video-media');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/98765/media'
+        && ($request->data()['video_url'] ?? null)                  === 'https://cdn.example.com/from-media.mp4');
+});
+
+it('shares instagram video from local path in videoUrl through temporary URL', function (): void {
+    Storage::fake('public');
+
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-ig-video-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for instagram local video test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, 'video-bytes');
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-local-video'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-local-video'], 200),
+    ]);
+
+    try
+    {
+        $shareResult = Socialize::instagram()
+            ->videoUrl($videoPath)
+            ->share()
+        ;
+
+        expect($shareResult->id())->toBe('ig-local-video');
+    } finally
+    {
+        @unlink($videoPath);
+    }
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/98765/media'
+        && str_contains((string)($request->data()['video_url'] ?? ''), '/storage/socialize-temp/'));
+});
+
+it('ignores empty items in instagram carousel list before creating children', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media' => Http::sequence()
+            ->push(['id' => 'child-only'], 200)
+            ->push(['id' => 'parent-only'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-carousel-sparse'], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->message('Sparse carousel')
+        ->carousel(['   ', 'https://cdn.example.com/only.jpg'])
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-carousel-sparse');
+    Http::assertSentCount(3);
+});
+
 it('deletes instagram post', function (): void {
     Http::fake([
         'https://graph.facebook.com/*' => Http::response(['success' => true], 200),
@@ -139,7 +295,13 @@ it('fails instagram share with invalid url', function (): void {
     Http::fake();
 
     Socialize::instagram()->imageUrl('bad-url')->share();
-})->throws(InvalidSharePayloadException::class, 'must be a valid URL');
+})->throws(InvalidSharePayloadException::class, 'does not exist or is not readable');
+
+it('fails instagram video share when url format is invalid', function (): void {
+    Http::fake();
+
+    Socialize::instagram()->videoUrl('http://')->share();
+})->throws(InvalidSharePayloadException::class, 'does not exist or is not readable');
 
 it('fails instagram share without media', function (): void {
     Http::fake();

@@ -39,3 +39,24 @@ it('detects empty core content', function (): void {
 
     expect($payload->hasAnyCoreContent())->toBeFalse();
 });
+
+it('treats provider media sources as core content', function (): void {
+    $payload = new SharePayload(
+        message: null,
+        link: null,
+        imageUrl: null,
+        videoUrl: null,
+        mediaIds: [],
+        providerOptions: [
+            'media_sources' => [
+                [
+                    'source' => '/tmp/image.jpg',
+                    'type'   => 'image',
+                ],
+            ],
+        ],
+        metadata: [],
+    );
+
+    expect($payload->hasAnyCoreContent())->toBeTrue();
+});

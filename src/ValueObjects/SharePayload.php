@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DrAliRagab\Socialize\ValueObjects;
 
+use function is_array;
+
 final readonly class SharePayload
 {
     /**
@@ -72,10 +74,13 @@ final readonly class SharePayload
 
     public function hasAnyCoreContent(): bool
     {
+        $mediaSources = $this->providerOptions['media_sources'] ?? null;
+
         return ($this->message !== null && $this->message !== '')
             || ($this->link !== null && $this->link !== '')
             || ($this->imageUrl !== null && $this->imageUrl !== '')
             || ($this->videoUrl !== null && $this->videoUrl !== '')
-            || $this->mediaIds !== [];
+            || $this->mediaIds !== []
+            || (is_array($mediaSources) && $mediaSources !== []);
     }
 }

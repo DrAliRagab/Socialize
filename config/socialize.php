@@ -12,6 +12,12 @@ return [
         'retry_sleep_ms'  => (int)env('SOCIALIZE_HTTP_RETRY_SLEEP_MS', 150),
     ],
 
+    'temporary_media' => [
+        'disk'       => env('SOCIALIZE_TEMP_MEDIA_DISK', 'public'),
+        'directory'  => env('SOCIALIZE_TEMP_MEDIA_DIRECTORY', 'socialize-temp'),
+        'visibility' => env('SOCIALIZE_TEMP_MEDIA_VISIBILITY', 'public'),
+    ],
+
     'model_columns' => [
         'message' => env('SOCIALIZE_MODEL_MESSAGE_COLUMN', 'title'),
         'link'    => env('SOCIALIZE_MODEL_LINK_COLUMN', 'url'),
