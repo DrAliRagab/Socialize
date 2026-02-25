@@ -47,6 +47,19 @@ final class ApiException extends SocializeException
         return new self($message, $provider, 500);
     }
 
+    /**
+     * @param array<string, mixed> $responseBody
+     */
+    public static function fromPayload(Provider $provider, int $status, string $message, array $responseBody = []): self
+    {
+        return new self(
+            sprintf('%s API request failed with status %d: %s', ucfirst($provider->value), $status, $message),
+            $provider,
+            $status,
+            $responseBody,
+        );
+    }
+
     public function provider(): Provider
     {
         return $this->provider;

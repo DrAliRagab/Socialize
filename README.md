@@ -153,6 +153,8 @@ Instagram:
 - `SOCIALIZE_INSTAGRAM_ACCESS_TOKEN` (required)
 - `SOCIALIZE_INSTAGRAM_GRAPH_VERSION` (optional, default: `v25.0`)
 - `SOCIALIZE_INSTAGRAM_BASE_URL` (optional)
+- `SOCIALIZE_INSTAGRAM_PUBLISH_RETRY_ATTEMPTS` (optional, default: `20`)
+- `SOCIALIZE_INSTAGRAM_PUBLISH_RETRY_SLEEP_SECONDS` (optional, default: `3`)
 
 X (Twitter):
 - `SOCIALIZE_TWITTER_BEARER_TOKEN` (required)
@@ -169,7 +171,8 @@ LinkedIn:
 ## Platform Notes
 - Facebook/Instagram use Graph API versioning from config.
 - Instagram content publishing is multi-step (container then publish).
-- Instagram publish failure troubleshooting uses `GET /{container-id}?fields=status_code,status`.
+- Instagram publish failure handling polls `GET /{container-id}?fields=status_code,status` and retries publish for "not ready" states.
+- Instagram video publishing defaults to `REELS` media type (Meta deprecates `VIDEO` feed publishing); passing `VIDEO` is normalized to `REELS` for compatibility.
 - Facebook/Instagram accept URL media. When you pass a local file path via `media(...)`, Socialize creates a temporary public URL, uses it for the request, then deletes the temporary file after success/failure.
 - X and LinkedIn auto-upload media from `media(...)`, `imageUrl(...)`, and `videoUrl(...)` sources and resolve the required media IDs / URNs internally.
 - X image uploads use `POST /2/media/upload` (base64 payload), while X video uploads use v2 chunked commands on `/2/media/upload` (`INIT`, `APPEND`, `FINALIZE`, `STATUS`).

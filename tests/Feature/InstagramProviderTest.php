@@ -31,6 +31,7 @@ it('shares instagram image content', function (): void {
 it('shares instagram reels video', function (): void {
     Http::fake([
         'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-video'], 200),
+        'https://graph.facebook.com/v25.0/container-video*'    => Http::response(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
         'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-video-1'], 200),
     ]);
 
@@ -51,6 +52,7 @@ it('shares instagram reels video', function (): void {
 it('sends instagram reels media_type only on container creation and not on publish call', function (): void {
     Http::fake([
         'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-video'], 200),
+        'https://graph.facebook.com/v25.0/container-video*'    => Http::response(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
         'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-video-2'], 200),
     ]);
 
@@ -76,13 +78,14 @@ it('sends instagram reels media_type only on container creation and not on publi
             && ($request->data()['creation_id'] ?? null) === 'container-video';
     });
 
-    Http::assertSentCount(2);
+    Http::assertSentCount(3);
 });
 
-it('uses default instagram VIDEO media_type for video containers when reel is not requested', function (): void {
+it('uses default instagram REELS media_type for video containers when reel is not requested', function (): void {
     Http::fake([
-        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-video-default'], 200),
-        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-video-default'], 200),
+        'https://graph.facebook.com/v25.0/98765/media'              => Http::response(['id' => 'container-video-default'], 200),
+        'https://graph.facebook.com/v25.0/container-video-default*' => Http::response(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish'      => Http::response(['id' => 'ig-video-default'], 200),
     ]);
 
     $shareResult = Socialize::instagram()
@@ -94,9 +97,65 @@ it('uses default instagram VIDEO media_type for video containers when reel is no
     expect($shareResult->id())->toBe('ig-video-default');
 
     Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/98765/media'
-        && ($request->data()['media_type'] ?? null)                 === 'VIDEO');
+        && ($request->data()['media_type'] ?? null)                 === 'REELS');
 
     Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/98765/media_publish');
+});
+
+it('maps explicit instagram VIDEO media_type option to REELS for compatibility', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'               => Http::response(['id' => 'container-video-explicit'], 200),
+        'https://graph.facebook.com/v25.0/container-video-explicit*' => Http::response(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish'       => Http::response(['id' => 'ig-video-explicit'], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->message('Explicit VIDEO')
+        ->videoUrl('https://cdn.example.com/explicit-video.mp4')
+        ->option('media_type', 'VIDEO')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-video-explicit');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/98765/media'
+        && ($request->data()['media_type'] ?? null)                 === 'REELS');
+});
+
+it('waits for instagram video container readiness before publish', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'            => Http::response(['id' => 'container-video-ready'], 200),
+        'https://graph.facebook.com/v25.0/container-video-ready*' => Http::sequence()
+            ->push(['status_code' => 'IN_PROGRESS', 'status' => 'IN_PROGRESS'], 200)
+            ->push(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-video-ready'], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->videoUrl('https://cdn.example.com/video-ready.mp4')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-video-ready');
+    Http::assertSentCount(4);
+});
+
+it('continues instagram publish when container status reports error and relies on publish result', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'            => Http::response(['id' => 'container-video-error'], 200),
+        'https://graph.facebook.com/v25.0/container-video-error*' => Http::response([
+            'status_code' => 'ERROR',
+            'status'      => 'ERROR',
+        ], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-video-status-error'], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->videoUrl('https://cdn.example.com/video-error.mp4')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-video-status-error');
 });
 
 it('shares instagram carousel content', function (): void {
@@ -207,8 +266,9 @@ it('shares instagram carousel with local files through temporary URLs and cleans
 
 it('shares instagram video from fluent media source', function (): void {
     Http::fake([
-        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-video-media'], 200),
-        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-video-media'], 200),
+        'https://graph.facebook.com/v25.0/98765/media'            => Http::response(['id' => 'container-video-media'], 200),
+        'https://graph.facebook.com/v25.0/container-video-media*' => Http::response(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish'    => Http::response(['id' => 'ig-video-media'], 200),
     ]);
 
     $shareResult = Socialize::instagram()
@@ -238,8 +298,9 @@ it('shares instagram video from local path in videoUrl through temporary URL', f
     file_put_contents($videoPath, 'video-bytes');
 
     Http::fake([
-        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-local-video'], 200),
-        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-local-video'], 200),
+        'https://graph.facebook.com/v25.0/98765/media'            => Http::response(['id' => 'container-local-video'], 200),
+        'https://graph.facebook.com/v25.0/container-local-video*' => Http::response(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish'    => Http::response(['id' => 'ig-local-video'], 200),
     ]);
 
     try
@@ -341,6 +402,61 @@ it('throws api exception when instagram publish does not return id', function ()
 
     Socialize::instagram()->imageUrl('https://cdn.example.com/ig.jpg')->share();
 })->throws(ApiException::class, 'did not return a media id');
+
+it('retries instagram publish when media is not ready yet and then succeeds', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-retry'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::sequence()
+            ->push([
+                'error' => [
+                    'message'       => 'Media ID is not available',
+                    'code'          => 9007,
+                    'error_subcode' => 2207027,
+                ],
+            ], 400)
+            ->push(['id' => 'ig-retry-success'], 200),
+        'https://graph.facebook.com/v25.0/container-retry*' => Http::response(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->imageUrl('https://cdn.example.com/retry.jpg')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-retry-success');
+    Http::assertSentCount(4);
+});
+
+it('falls back instagram status polling when estimated time field is unsupported', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-retry-fallback'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::sequence()
+            ->push([
+                'error' => [
+                    'message'       => 'Media ID is not available',
+                    'code'          => 9007,
+                    'error_subcode' => 2207027,
+                ],
+            ], 400)
+            ->push(['id' => 'ig-retry-fallback-success'], 200),
+        'https://graph.facebook.com/v25.0/container-retry-fallback*' => Http::sequence()
+            ->push([
+                'error' => [
+                    'message' => '(#100) Tried accessing nonexisting field (estimated_time_to_completion)',
+                    'code'    => 100,
+                ],
+            ], 400)
+            ->push(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->imageUrl('https://cdn.example.com/retry-fallback.jpg')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-retry-fallback-success');
+    Http::assertSentCount(5);
+});
 
 it('throws api exception when instagram publish status query has no status details', function (): void {
     Http::fake([

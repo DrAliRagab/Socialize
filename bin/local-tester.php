@@ -251,9 +251,11 @@ function buildConfigFromEnv(): array
                 ],
             ],
             'instagram' => [
-                'base_url'      => envValue('SOCIALIZE_INSTAGRAM_BASE_URL', 'https://graph.facebook.com'),
-                'graph_version' => envValue('SOCIALIZE_INSTAGRAM_GRAPH_VERSION', 'v25.0'),
-                'profiles'      => [
+                'base_url'                    => envValue('SOCIALIZE_INSTAGRAM_BASE_URL', 'https://graph.facebook.com'),
+                'graph_version'               => envValue('SOCIALIZE_INSTAGRAM_GRAPH_VERSION', 'v25.0'),
+                'publish_retry_attempts'      => envInt('SOCIALIZE_INSTAGRAM_PUBLISH_RETRY_ATTEMPTS', 20),
+                'publish_retry_sleep_seconds' => envInt('SOCIALIZE_INSTAGRAM_PUBLISH_RETRY_SLEEP_SECONDS', 3),
+                'profiles'                    => [
                     'default' => [
                         'ig_id'        => envValue('SOCIALIZE_INSTAGRAM_IG_ID'),
                         'access_token' => envValue('SOCIALIZE_INSTAGRAM_ACCESS_TOKEN'),

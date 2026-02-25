@@ -31,6 +31,22 @@ it('builds invalid response exception with status 500', function (): void {
     ;
 });
 
+it('builds api exception from provider payload with explicit status and body', function (): void {
+    $apiException = ApiException::fromPayload(
+        Provider::Instagram,
+        400,
+        'Container failed',
+        ['status_code' => 'ERROR', 'status' => 'ERROR'],
+    );
+
+    expect($apiException->provider())->toBe(Provider::Instagram)
+        ->and($apiException->status())->toBe(400)
+        ->and($apiException->responseBody())->toBe(['status_code' => 'ERROR', 'status' => 'ERROR'])
+        ->and($apiException->getMessage())->toContain('status 400')
+        ->and($apiException->getMessage())->toContain('Container failed')
+    ;
+});
+
 it('extracts problem detail message from title and detail fields', function (): void {
     $json = json_encode([
         'title'  => 'Unsupported Authentication',

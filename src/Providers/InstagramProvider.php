@@ -11,12 +11,17 @@ use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\ValueObjects\SharePayload;
 use DrAliRagab\Socialize\ValueObjects\ShareResult;
 
+use function in_array;
 use function is_array;
+use function is_int;
 use function is_string;
+use function mb_strtolower;
 
 use const PHP_EOL;
 
 use function sprintf;
+use function str_contains;
+use function usleep;
 
 final class InstagramProvider extends BaseProvider implements ProviderDriver
 {
@@ -54,10 +59,12 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
                 $creationId = $this->createSingleContainer($igId, $accessToken, $version, $resolvedPayload);
             }
 
-            $publishResponse = $this->decode($this->send('POST', sprintf('/%s/%s/media_publish', $version, $igId), [
-                'access_token' => $accessToken,
-                'creation_id'  => $creationId,
-            ]));
+            if ($resolvedPayload->videoUrl() !== null)
+            {
+                $this->waitForContainerReady($creationId, $accessToken, $version);
+            }
+
+            $publishResponse = $this->publishWithRetry($igId, $accessToken, $version, $creationId);
 
             $id = $publishResponse['id'] ?? null;
 
@@ -205,12 +212,13 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
 
     private function resolveVideoMediaType(SharePayload $sharePayload): string
     {
-        $mediaType  = $sharePayload->option('media_type', 'VIDEO');
-        $configured = is_string($mediaType) ? mb_strtoupper($mediaType) : 'VIDEO';
+        $mediaType  = $sharePayload->option('media_type', 'REELS');
+        $configured = is_string($mediaType) ? mb_strtoupper($mediaType) : 'REELS';
 
         return match ($configured)
         {
-            'VIDEO', 'REELS', 'STORIES' => $configured,
+            'REELS', 'STORIES' => $configured,
+            'VIDEO' => 'REELS',
             default => throw new InvalidSharePayloadException('Instagram media_type must be one of VIDEO, REELS, STORIES.'),
         };
     }
@@ -223,6 +231,241 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
         ], fn (?string $value): bool => is_string($value) && mb_trim($value) !== ''));
 
         return $parts === [] ? null : implode(PHP_EOL, $parts);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function publishWithRetry(string $igId, string $accessToken, string $version, string $creationId): array
+    {
+        $attempt      = 0;
+        $maxAttempts  = $this->publishRetryAttempts();
+        $sleepSeconds = $this->publishRetrySleepSeconds();
+        $lastError    = null;
+
+        while ($attempt < $maxAttempts)
+        {
+            try
+            {
+                return $this->decode($this->send('POST', sprintf('/%s/%s/media_publish', $version, $igId), [
+                    'access_token' => $accessToken,
+                    'creation_id'  => $creationId,
+                ]));
+            } catch (ApiException $apiException)
+            {
+                $lastError = $apiException;
+
+                if (! $this->isNotReadyPublishException($apiException))
+                {
+                    throw $apiException;
+                }
+
+                if ($attempt >= $maxAttempts - 1)
+                {
+                    throw $apiException;
+                }
+
+                $wait = $this->containerRetryWaitSeconds($creationId, $accessToken, $version, $sleepSeconds);
+
+                if ($wait > 0)
+                {
+                    usleep($wait * 1_000_000);
+                }
+            }
+
+            $attempt++;
+        }
+
+        if ($lastError instanceof ApiException)
+        {
+            throw $lastError;
+        }
+
+        throw ApiException::invalidResponse($this->provider(), 'Instagram publish retry failed without an API error context.');
+    }
+
+    private function isNotReadyPublishException(ApiException $apiException): bool
+    {
+        if ($apiException->status() !== 400)
+        {
+            return false;
+        }
+
+        $body     = $apiException->responseBody();
+        $error    = $body['error'] ?? null;
+        $code     = is_array($error) ? ($error['code'] ?? null) : null;
+        $subCode  = is_array($error) ? ($error['error_subcode'] ?? null) : null;
+        $message  = is_array($error) ? ($error['message'] ?? null) : null;
+        $userText = is_array($error) ? ($error['error_user_msg'] ?? null) : null;
+
+        if ($code === 9007 || $subCode === 2207027)
+        {
+            return true;
+        }
+
+        $text = '';
+
+        if (is_string($message))
+        {
+            $text .= mb_strtolower($message) . ' ';
+        }
+
+        if (is_string($userText))
+        {
+            $text .= mb_strtolower($userText);
+        }
+
+        return str_contains($text, 'media id is not available')
+            || str_contains($text, 'not ready for publishing');
+    }
+
+    private function containerRetryWaitSeconds(string $creationId, string $accessToken, string $version, int $default): int
+    {
+        return $this->waitSecondsFromContainerStatus(
+            $this->fetchContainerStatus($creationId, $accessToken, $version),
+            $default,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fetchContainerStatus(string $creationId, string $accessToken, string $version): array
+    {
+        try
+        {
+            return $this->decode($this->send('GET', sprintf('/%s/%s', $version, $creationId), [
+                'access_token' => $accessToken,
+                'fields'       => 'status_code,status,estimated_time_to_completion',
+            ]));
+        } catch (ApiException $apiException)
+        {
+            if (! $this->isUnsupportedEstimatedTimeFieldException($apiException))
+            {
+                throw $apiException;
+            }
+
+            return $this->decode($this->send('GET', sprintf('/%s/%s', $version, $creationId), [
+                'access_token' => $accessToken,
+                'fields'       => 'status_code,status',
+            ]));
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $status
+     */
+    private function waitSecondsFromContainerStatus(array $status, int $default): int
+    {
+        $statusCode = $status['status_code'] ?? null;
+
+        if (is_string($statusCode))
+        {
+            $normalized = mb_strtolower(mb_trim($statusCode));
+
+            if ($normalized === 'finished' || $normalized === 'ready')
+            {
+                return 0;
+            }
+        }
+
+        $eta = $status['estimated_time_to_completion'] ?? null;
+
+        if (is_int($eta) && $eta > 0)
+        {
+            return $eta;
+        }
+
+        return $default;
+    }
+
+    private function waitForContainerReady(string $creationId, string $accessToken, string $version): void
+    {
+        $attempt      = 0;
+        $maxAttempts  = $this->publishRetryAttempts();
+        $sleepSeconds = $this->publishRetrySleepSeconds();
+
+        while ($attempt < $maxAttempts)
+        {
+            $status     = $this->fetchContainerStatus($creationId, $accessToken, $version);
+            $statusCode = $status['status_code'] ?? null;
+
+            if (is_string($statusCode))
+            {
+                $normalized = mb_strtolower(mb_trim($statusCode));
+
+                if ($normalized === 'finished' || $normalized === 'ready')
+                {
+                    return;
+                }
+
+                if (in_array($normalized, ['error', 'expired', 'failed'], true))
+                {
+                    return;
+                }
+            }
+
+            if ($attempt >= $maxAttempts - 1)
+            {
+                return;
+            }
+
+            $wait = $this->waitSecondsFromContainerStatus($status, $sleepSeconds);
+
+            if ($wait > 0)
+            {
+                usleep($wait * 1_000_000);
+            }
+
+            $attempt++;
+        }
+    }
+
+    private function isUnsupportedEstimatedTimeFieldException(ApiException $apiException): bool
+    {
+        if ($apiException->status() !== 400)
+        {
+            return false;
+        }
+
+        $body    = $apiException->responseBody();
+        $error   = $body['error'] ?? null;
+        $code    = is_array($error) ? ($error['code'] ?? null) : null;
+        $message = is_array($error) ? ($error['message'] ?? null) : null;
+
+        if ($code !== 100 || ! is_string($message))
+        {
+            return false;
+        }
+
+        $normalized = mb_strtolower($message);
+
+        return str_contains($normalized, 'nonexisting field')
+            && str_contains($normalized, 'estimated_time_to_completion');
+    }
+
+    private function publishRetryAttempts(): int
+    {
+        $configured = $this->providerConfig['publish_retry_attempts'] ?? 8;
+
+        if (! is_int($configured))
+        {
+            return 8;
+        }
+
+        return max(1, $configured);
+    }
+
+    private function publishRetrySleepSeconds(): int
+    {
+        $configured = $this->providerConfig['publish_retry_sleep_seconds'] ?? 2;
+
+        if (! is_int($configured))
+        {
+            return 2;
+        }
+
+        return max(0, $configured);
     }
 
     private function containerStatusDetail(string $creationId, string $accessToken, string $version): string

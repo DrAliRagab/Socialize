@@ -37,9 +37,11 @@ return [
         ],
 
         'instagram' => [
-            'base_url'      => env('SOCIALIZE_INSTAGRAM_BASE_URL', 'https://graph.facebook.com'),
-            'graph_version' => env('SOCIALIZE_INSTAGRAM_GRAPH_VERSION', 'v25.0'),
-            'profiles'      => [
+            'base_url'                    => env('SOCIALIZE_INSTAGRAM_BASE_URL', 'https://graph.facebook.com'),
+            'graph_version'               => env('SOCIALIZE_INSTAGRAM_GRAPH_VERSION', 'v25.0'),
+            'publish_retry_attempts'      => (int)env('SOCIALIZE_INSTAGRAM_PUBLISH_RETRY_ATTEMPTS', 20),
+            'publish_retry_sleep_seconds' => (int)env('SOCIALIZE_INSTAGRAM_PUBLISH_RETRY_SLEEP_SECONDS', 3),
+            'profiles'                    => [
                 'default' => [
                     'ig_id'        => env('SOCIALIZE_INSTAGRAM_IG_ID'),
                     'access_token' => env('SOCIALIZE_INSTAGRAM_ACCESS_TOKEN'),
