@@ -238,12 +238,10 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
      */
     private function publishWithRetry(string $igId, string $accessToken, string $version, string $creationId): array
     {
-        $attempt      = 0;
         $maxAttempts  = $this->publishRetryAttempts();
         $sleepSeconds = $this->publishRetrySleepSeconds();
-        $lastError    = null;
 
-        while ($attempt < $maxAttempts)
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++)
         {
             try
             {
@@ -272,16 +270,9 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
                     usleep($wait * 1_000_000);
                 }
             }
-
-            $attempt++;
         }
 
-        if ($lastError instanceof ApiException)
-        {
-            throw $lastError;
-        }
-
-        throw ApiException::invalidResponse($this->provider(), 'Instagram publish retry failed without an API error context.');
+        throw ApiException::invalidResponse(Provider::Instagram, 'Instagram publish retry loop exited unexpectedly.');
     }
 
     private function isNotReadyPublishException(ApiException $apiException): bool
@@ -448,24 +439,34 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
     {
         $configured = $this->providerConfig['publish_retry_attempts'] ?? 8;
 
-        if (! is_int($configured))
+        if (is_int($configured))
         {
-            return 8;
+            return max(1, $configured);
         }
 
-        return max(1, $configured);
+        if (is_string($configured) && preg_match('/^-?\d+$/', $configured) === 1)
+        {
+            return max(1, (int)$configured);
+        }
+
+        return 8;
     }
 
     private function publishRetrySleepSeconds(): int
     {
         $configured = $this->providerConfig['publish_retry_sleep_seconds'] ?? 2;
 
-        if (! is_int($configured))
+        if (is_int($configured))
         {
-            return 2;
+            return max(0, $configured);
         }
 
-        return max(0, $configured);
+        if (is_string($configured) && preg_match('/^-?\d+$/', $configured) === 1)
+        {
+            return max(0, (int)$configured);
+        }
+
+        return 2;
     }
 
     private function containerStatusDetail(string $creationId, string $accessToken, string $version): string

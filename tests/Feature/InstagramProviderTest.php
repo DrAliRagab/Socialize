@@ -427,6 +427,156 @@ it('retries instagram publish when media is not ready yet and then succeeds', fu
     Http::assertSentCount(4);
 });
 
+it('throws immediately for instagram publish errors that are not retryable not-ready states', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-plain-error'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['error' => ['message' => 'Unexpected publish error']], 500),
+    ]);
+
+    Socialize::instagram()->imageUrl('https://cdn.example.com/plain-error.jpg')->share();
+})->throws(ApiException::class, 'status 500');
+
+it('throws on final instagram not-ready publish attempt when retries are exhausted', function (): void {
+    config()->set('socialize.providers.instagram.publish_retry_attempts', 1);
+    config()->set('socialize.providers.instagram.publish_retry_sleep_seconds', 0);
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-retry-final'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response([
+            'error' => [
+                'message'       => 'Media ID is not available',
+                'code'          => 9007,
+                'error_subcode' => 2207027,
+            ],
+        ], 400),
+    ]);
+
+    Socialize::instagram()->imageUrl('https://cdn.example.com/retry-final.jpg')->share();
+})->throws(ApiException::class, 'Media ID is not available');
+
+it('retries instagram publish when not-ready state is inferred from error text and eta', function (): void {
+    config()->set('socialize.providers.instagram.publish_retry_attempts', 2);
+    config()->set('socialize.providers.instagram.publish_retry_sleep_seconds', 0);
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-retry-text'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::sequence()
+            ->push([
+                'error' => [
+                    'message' => 'The media is not ready for publishing yet.',
+                ],
+            ], 400)
+            ->push(['id' => 'ig-retry-text-success'], 200),
+        'https://graph.facebook.com/v25.0/container-retry-text*' => Http::response([
+            'status_code'                  => 'IN_PROGRESS',
+            'status'                       => 'IN_PROGRESS',
+            'estimated_time_to_completion' => 1,
+        ], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->imageUrl('https://cdn.example.com/retry-text.jpg')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-retry-text-success');
+});
+
+it('retries instagram publish when not-ready state is inferred from user-facing error text', function (): void {
+    config()->set('socialize.providers.instagram.publish_retry_attempts', 2);
+    config()->set('socialize.providers.instagram.publish_retry_sleep_seconds', 0);
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-retry-user-text'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::sequence()
+            ->push([
+                'error' => [
+                    'error_user_msg' => 'The media is not ready for publishing, please wait.',
+                ],
+            ], 400)
+            ->push(['id' => 'ig-retry-user-text-success'], 200),
+        'https://graph.facebook.com/v25.0/container-retry-user-text*' => Http::response([
+            'status_code' => 'IN_PROGRESS',
+            'status'      => 'IN_PROGRESS',
+        ], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->imageUrl('https://cdn.example.com/retry-user-text.jpg')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-retry-user-text-success');
+});
+
+it('rethrows instagram container status polling failures when status check endpoint fails', function (): void {
+    config()->set('socialize.providers.instagram.publish_retry_attempts', 2);
+    config()->set('socialize.providers.instagram.publish_retry_sleep_seconds', 0);
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-retry-fail-status'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response([
+            'error' => [
+                'message'       => 'Media ID is not available',
+                'code'          => 9007,
+                'error_subcode' => 2207027,
+            ],
+        ], 400),
+        'https://graph.facebook.com/v25.0/container-retry-fail-status*' => Http::response([
+            'error' => [
+                'message' => 'status endpoint unavailable',
+            ],
+        ], 500),
+    ]);
+
+    Socialize::instagram()->imageUrl('https://cdn.example.com/retry-status-fail.jpg')->share();
+})->throws(ApiException::class, 'status 500');
+
+it('rethrows instagram container status polling 400 errors unrelated to estimated-time field support', function (): void {
+    config()->set('socialize.providers.instagram.publish_retry_attempts', 2);
+    config()->set('socialize.providers.instagram.publish_retry_sleep_seconds', 0);
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-retry-bad-code'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response([
+            'error' => [
+                'message'       => 'Media ID is not available',
+                'code'          => 9007,
+                'error_subcode' => 2207027,
+            ],
+        ], 400),
+        'https://graph.facebook.com/v25.0/container-retry-bad-code*' => Http::response([
+            'error' => [
+                'message' => '(#999) Generic request error.',
+                'code'    => 999,
+            ],
+        ], 400),
+    ]);
+
+    Socialize::instagram()->imageUrl('https://cdn.example.com/retry-bad-code.jpg')->share();
+})->throws(ApiException::class, 'status 400');
+
+it('continues instagram video share when readiness polling reaches attempt limit without ready state', function (): void {
+    config()->set('socialize.providers.instagram.publish_retry_attempts', 1);
+    config()->set('socialize.providers.instagram.publish_retry_sleep_seconds', 0);
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'                    => Http::response(['id' => 'container-video-attempt-limit'], 200),
+        'https://graph.facebook.com/v25.0/container-video-attempt-limit*' => Http::response([
+            'status_code' => 'IN_PROGRESS',
+            'status'      => 'IN_PROGRESS',
+        ], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response(['id' => 'ig-video-attempt-limit'], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->videoUrl('https://cdn.example.com/video-attempt-limit.mp4')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-video-attempt-limit');
+});
+
 it('falls back instagram status polling when estimated time field is unsupported', function (): void {
     Http::fake([
         'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-retry-fallback'], 200),

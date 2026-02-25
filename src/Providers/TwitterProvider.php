@@ -223,11 +223,6 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
             {
                 $chunk = substr($media['contents'], $offset, $chunkSize);
 
-                if ($chunk === '')
-                {
-                    break;
-                }
-
                 $this->uploadAppend($mediaId, $segment, $chunk, $media['file_name']);
                 $offset += strlen($chunk);
                 $segment++;

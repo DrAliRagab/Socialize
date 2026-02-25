@@ -177,6 +177,7 @@ it('normalizes and deduplicates media sources from payload', function (): void {
             'media_sources' => [
                 'bad-entry',
                 ['source' => '   '],
+                ['source' => 123, 'type' => 'image'],
                 ['source' => 'https://cdn.example.com/image.jpg', 'type' => 'image'],
                 ['source' => 'https://cdn.example.com/image.jpg', 'type' => 'image'],
             ],
@@ -391,6 +392,13 @@ it('prepares upload source URL into temporary file and cleans it', function (): 
     $cleanup();
 
     expect(file_exists($path))->toBeFalse();
+});
+
+it('normalizes null content-type headers to null', function (): void {
+    $provider         = makeBaseProviderStub();
+    $reflectionMethod = new ReflectionClass(BaseProvider::class)->getMethod('normalizeContentType');
+
+    expect($reflectionMethod->invoke($provider, null))->toBeNull();
 });
 
 it('returns local upload source unchanged and cleanup is a no-op', function (): void {

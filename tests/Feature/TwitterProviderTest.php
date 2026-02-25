@@ -6,6 +6,7 @@ use DrAliRagab\Socialize\Exceptions\ApiException;
 use DrAliRagab\Socialize\Exceptions\InvalidConfigException;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\Facades\Socialize;
+use DrAliRagab\Socialize\Providers\TwitterProvider;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -433,6 +434,64 @@ it('throws when x upload init does not return media id', function (): void {
     ;
 })->throws(ApiException::class, 'image upload did not return a media id');
 
+it('throws when x upload init fails with non-400 status', function (): void {
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-x-init-500-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for x init-500 test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, str_repeat('v', 256));
+
+    Http::fake([
+        'https://api.x.com/2/media/upload*' => Http::response(['error' => 'server init failure'], 500),
+    ]);
+
+    try
+    {
+        Socialize::twitter()
+            ->media($videoPath, 'video')
+            ->share()
+        ;
+    } finally
+    {
+        @unlink($videoPath);
+    }
+})->throws(ApiException::class, 'status 500');
+
+it('throws when x video upload init cannot resolve media id from any category', function (): void {
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-x-init-no-id-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for x init-no-id test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, str_repeat('v', 256));
+
+    Http::fake([
+        'https://api.x.com/2/media/upload*' => Http::sequence()
+            ->push([], 200)
+            ->push([], 200),
+    ]);
+
+    try
+    {
+        Socialize::twitter()
+            ->media($videoPath, 'video')
+            ->share()
+        ;
+    } finally
+    {
+        @unlink($videoPath);
+    }
+})->throws(ApiException::class, 'init did not return a media id');
+
 it('throws when x upload append fails', function (): void {
     $tempFile = tempnam(sys_get_temp_dir(), 'socialize-x-append-fail-');
 
@@ -463,6 +522,157 @@ it('throws when x upload append fails', function (): void {
         @unlink($videoPath);
     }
 })->throws(ApiException::class, 'status 400');
+
+it('throws when x upload append command fails with non-400 status', function (): void {
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-x-append-500-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for x append-500 test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, str_repeat('v', 256));
+
+    Http::fake([
+        'https://api.x.com/2/media/upload*' => Http::sequence()
+            ->push(['data' => ['id' => 'm-id']], 200)
+            ->push(['error' => 'append server failure'], 500),
+    ]);
+
+    try
+    {
+        Socialize::twitter()
+            ->media($videoPath, 'video')
+            ->share()
+        ;
+    } finally
+    {
+        @unlink($videoPath);
+    }
+})->throws(ApiException::class, 'status 500');
+
+it('throws when x upload finalize command fails with non-400 status', function (): void {
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-x-finalize-500-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for x finalize-500 test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, str_repeat('v', 256));
+
+    Http::fake([
+        'https://api.x.com/2/media/upload*' => Http::sequence()
+            ->push(['data' => ['id' => 'm-id']], 200)
+            ->push('', 204)
+            ->push(['error' => 'finalize server failure'], 500),
+    ]);
+
+    try
+    {
+        Socialize::twitter()
+            ->media($videoPath, 'video')
+            ->share()
+        ;
+    } finally
+    {
+        @unlink($videoPath);
+    }
+})->throws(ApiException::class, 'status 500');
+
+it('uses fallback x media_id_string from init response when data.id is missing', function (): void {
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-x-init-media-id-string-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for x media_id_string test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, str_repeat('v', 256));
+
+    Http::fake([
+        'https://api.x.com/2/media/upload*' => Http::sequence()
+            ->push(['media_id_string' => 'm-string'], 200)
+            ->push('', 204)
+            ->push(['data' => ['id' => 'm-string']], 200),
+        'https://api.x.com/2/tweets' => Http::response(['data' => ['id' => 'x-id-string']], 200),
+    ]);
+
+    try
+    {
+        $shareResult = Socialize::twitter()
+            ->message('media_id_string')
+            ->media($videoPath, 'video')
+            ->share()
+        ;
+
+        expect($shareResult->id())->toBe('x-id-string');
+    } finally
+    {
+        @unlink($videoPath);
+    }
+});
+
+it('converts bool/int multipart fields and skips unsupported field types in x upload command internals', function (): void {
+    $provider = new TwitterProvider(
+        providerConfig: ['base_url' => 'https://api.x.com'],
+        credentials: ['bearer_token' => 'x-token'],
+        httpConfig: ['timeout' => 1, 'connect_timeout' => 1, 'retries' => 1, 'retry_sleep_ms' => 1],
+        profile: 'default',
+    );
+
+    Http::fake([
+        'https://api.x.com/2/media/upload' => Http::response(['data' => ['id' => 'm-internal']], 200),
+    ]);
+
+    $reflectionMethod = new ReflectionClass(TwitterProvider::class)->getMethod('uploadCommand');
+
+    /** @var array<string, mixed> $result */
+    $result = $reflectionMethod->invoke($provider, [
+        'command' => 'INIT',
+        'shared'  => false,
+        'count'   => 7,
+        'meta'    => ['ignored' => true],
+    ], null, null);
+
+    expect($result)->toBe(['data' => ['id' => 'm-internal']]);
+
+    Http::assertSent(function (Request $request): bool {
+        if ($request->url() !== 'https://api.x.com/2/media/upload')
+        {
+            return false;
+        }
+
+        $body = $request->body();
+
+        return str_contains($body, 'name="shared"')
+            && str_contains($body, 'false')
+            && str_contains($body, 'name="count"')
+            && str_contains($body, '7')
+            && ! str_contains($body, 'name="meta"');
+    });
+});
+
+it('resolves x media category internals for non-video media', function (): void {
+    $provider = new TwitterProvider(
+        providerConfig: ['base_url' => 'https://api.x.com'],
+        credentials: ['bearer_token' => 'x-token'],
+        httpConfig: ['timeout' => 1, 'connect_timeout' => 1, 'retries' => 1, 'retry_sleep_ms' => 1],
+        profile: 'default',
+    );
+
+    $reflectionMethod = new ReflectionClass(TwitterProvider::class)->getMethod('resolveMediaCategory');
+
+    expect($reflectionMethod->invoke($provider, 'image', 'image/gif'))->toBe('tweet_gif')
+        ->and($reflectionMethod->invoke($provider, 'image', 'image/jpeg'))->toBe('tweet_image')
+    ;
+});
 
 it('continues x share when finalize returns non-pending processing state', function (): void {
     Http::fake([
