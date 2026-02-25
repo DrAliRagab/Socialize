@@ -15,11 +15,14 @@ use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\ValueObjects\SharePayload;
 use Exception;
 
+use function fclose;
 use function file_exists;
 use function file_get_contents;
 use function file_put_contents;
 
 use const FILTER_VALIDATE_URL;
+
+use function fopen;
 
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
@@ -35,6 +38,7 @@ use InvalidArgumentException;
 
 use function is_array;
 use function is_bool;
+use function is_dir;
 use function is_int;
 use function is_readable;
 use function is_string;
@@ -115,6 +119,7 @@ abstract class BaseProvider
             throw ApiException::invalidResponse(
                 $this->provider(),
                 sprintf('%s request failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
+                throwable: $exception,
             );
         }
 
@@ -151,7 +156,58 @@ abstract class BaseProvider
             throw ApiException::invalidResponse(
                 $this->provider(),
                 sprintf('%s request failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
+                throwable: $exception,
             );
+        }
+
+        if ($response->failed())
+        {
+            throw ApiException::fromResponse($this->provider(), $response);
+        }
+
+        return $response;
+    }
+
+    /**
+     * @param array<string, string> $headers
+     */
+    protected function sendBinaryFile(string $method, string $url, string $filePath, string $contentType, array $headers = []): Response
+    {
+        if (! file_exists($filePath) || ! is_readable($filePath))
+        {
+            throw new InvalidSharePayloadException(sprintf('Media source path does not exist or is not readable [%s].', $filePath));
+        }
+
+        $method = mb_strtoupper($method);
+        $handle = fopen($filePath, 'rb');
+
+        // @codeCoverageIgnoreStart
+        if ($handle === false)
+        {
+            throw new InvalidSharePayloadException(sprintf('Media source path does not exist or is not readable [%s].', $filePath));
+        }
+
+        // @codeCoverageIgnoreEnd
+
+        try
+        {
+            $response = Http::withHeaders($headers)
+                ->timeout($this->intConfig('timeout', 15))
+                ->connectTimeout($this->intConfig('connect_timeout', 10))
+                ->send($method, $url, [
+                    'body' => $handle,
+                ])
+            ;
+        } catch (Exception $exception)
+        {
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                sprintf('%s request failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
+                throwable: $exception,
+            );
+        } finally
+        {
+            fclose($handle);
         }
 
         if ($response->failed())
@@ -225,6 +281,7 @@ abstract class BaseProvider
             throw ApiException::invalidResponse(
                 $this->provider(),
                 sprintf('%s request failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
+                throwable: $exception,
             );
         }
 
@@ -294,11 +351,6 @@ abstract class BaseProvider
         {
             $source = mb_trim($mediaSource['source']);
             $type   = $mediaSource['type'];
-
-            if ($source === '')
-            {
-                continue;
-            }
 
             $normalizedType = is_string($type) && mb_trim($type) !== ''
                 ? mb_strtolower(mb_trim($type))
@@ -492,6 +544,7 @@ abstract class BaseProvider
                 throw ApiException::invalidResponse(
                     $this->provider(),
                     sprintf('%s media download failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
+                    throwable: $exception,
                 );
             }
 
@@ -567,13 +620,17 @@ abstract class BaseProvider
             ];
         }
 
-        $media     = $this->loadBinaryMediaSource($source);
-        $extension = mb_strtolower(pathinfo($media['file_name'], PATHINFO_EXTENSION));
+        $pathFromUrl = parse_url($source, PHP_URL_PATH);
+        $fileName    = is_string($pathFromUrl) && mb_trim($pathFromUrl) !== ''
+            ? basename($pathFromUrl)
+            : 'media.bin';
 
-        if ($extension === '' || $extension === 'bin')
+        if ($fileName === '' || ! str_contains($fileName, '.'))
         {
-            $extension = $this->extensionFromMimeType($media['mime_type']);
+            $fileName = 'media.bin';
         }
+
+        $extension = mb_strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
 
         $temporaryPath = sys_get_temp_dir()
             . DIRECTORY_SEPARATOR
@@ -585,13 +642,86 @@ abstract class BaseProvider
             $temporaryPath .= '.' . $extension;
         }
 
-        $written = @file_put_contents($temporaryPath, $media['contents']);
-
-        if ($written === false || $written <= 0)
+        if (is_dir($temporaryPath))
         {
             throw new InvalidSharePayloadException(
                 sprintf('Unable to create temporary downloaded media file for source [%s].', $source),
             );
+        }
+
+        $pendingRequest = Http::accept('*/*')
+            ->timeout($this->intConfig('timeout', 15))
+            ->connectTimeout($this->intConfig('connect_timeout', 10))
+            ->retry(
+                $this->intConfig('retries', 1),
+                $this->intConfig('retry_sleep_ms', 150),
+                throw: false,
+            )
+            ->sink($temporaryPath)
+        ;
+
+        try
+        {
+            $response = $pendingRequest->get($source);
+        } catch (Exception $exception)
+        {
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                sprintf('%s media download failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
+                throwable: $exception,
+            );
+        }
+
+        if ($response->failed())
+        {
+            @unlink($temporaryPath);
+
+            throw ApiException::fromResponse($this->provider(), $response);
+        }
+
+        $downloadedSize = filesize($temporaryPath);
+
+        if (! is_int($downloadedSize) || $downloadedSize <= 0)
+        {
+            $body = $response->body();
+
+            if ($body !== '')
+            {
+                $written = @file_put_contents($temporaryPath, $body);
+
+                if ($written === false || $written <= 0)
+                {
+                    @unlink($temporaryPath);
+
+                    throw new InvalidSharePayloadException(
+                        sprintf('Unable to create temporary downloaded media file for source [%s].', $source),
+                    );
+                }
+
+                $downloadedSize = filesize($temporaryPath);
+            }
+        }
+
+        if (! is_int($downloadedSize) || $downloadedSize <= 0)
+        {
+            @unlink($temporaryPath);
+
+            throw new InvalidSharePayloadException(sprintf('Downloaded media from [%s] is empty.', $source));
+        }
+
+        if ($extension === '' || $extension === 'bin')
+        {
+            $extension = $this->extensionFromMimeType($this->normalizeContentType($response->header('Content-Type')));
+
+            if ($extension !== '')
+            {
+                $renamedTemporaryPath = $temporaryPath . '.' . $extension;
+
+                if (@rename($temporaryPath, $renamedTemporaryPath))
+                {
+                    $temporaryPath = $renamedTemporaryPath;
+                }
+            }
         }
 
         $cleanup = static function () use ($temporaryPath): void {

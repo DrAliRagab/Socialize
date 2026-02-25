@@ -5,34 +5,32 @@ declare(strict_types=1);
 namespace DrAliRagab\Socialize\Concerns;
 
 use DrAliRagab\Socialize\SocializeManager;
+use DrAliRagab\Socialize\Support\FluentShare;
 use DrAliRagab\Socialize\ValueObjects\ShareResult;
 
+use function is_array;
 use function is_string;
 
 trait CanShareSocially
 {
     public function shareTo(string $provider, ?string $profile = null): ShareResult
     {
+        return $this->shareBuilderTo($provider, $profile)->share();
+    }
+
+    public function shareBuilderTo(string $provider, ?string $profile = null): FluentShare
+    {
         /** @var SocializeManager $socializeManager */
         $socializeManager = app(SocializeManager::class);
 
-        $messageColumn = config('socialize.model_columns.message', 'title');
-        $linkColumn    = config('socialize.model_columns.link', 'url');
-        $imageColumn   = config('socialize.model_columns.image', 'image');
-        $videoColumn   = config('socialize.model_columns.video', 'video');
-
-        $messageColumn = is_string($messageColumn) ? $messageColumn : 'title';
-        $linkColumn    = is_string($linkColumn) ? $linkColumn : 'url';
-        $imageColumn   = is_string($imageColumn) ? $imageColumn : 'image';
-        $videoColumn   = is_string($videoColumn) ? $videoColumn : 'video';
+        $columns = $this->socializeColumns();
 
         return $socializeManager
             ->provider($provider, $profile)
-            ->message($this->resolveStringValue($messageColumn))
-            ->link($this->resolveStringValue($linkColumn))
-            ->imageUrl($this->resolveStringValue($imageColumn))
-            ->videoUrl($this->resolveStringValue($videoColumn))
-            ->share()
+            ->message($this->resolveStringValue($columns['message']))
+            ->link($this->resolveStringValue($columns['link']))
+            ->imageUrl($this->resolveStringValue($columns['image']))
+            ->videoUrl($this->resolveStringValue($columns['video']))
         ;
     }
 
@@ -54,6 +52,31 @@ trait CanShareSocially
     public function shareToLinkedIn(?string $profile = null): ShareResult
     {
         return $this->shareTo('linkedin', $profile);
+    }
+
+    /**
+     * @return array{message: string, link: string, image: string, video: string}
+     */
+    protected function socializeColumns(): array
+    {
+        $columns = config('socialize.model_columns', []);
+
+        if (! is_array($columns))
+        {
+            $columns = [];
+        }
+
+        $messageColumn = $columns['message'] ?? 'title';
+        $linkColumn    = $columns['link']    ?? 'url';
+        $imageColumn   = $columns['image']   ?? 'image';
+        $videoColumn   = $columns['video']   ?? 'video';
+
+        return [
+            'message' => is_string($messageColumn) ? $messageColumn : 'title',
+            'link'    => is_string($linkColumn) ? $linkColumn : 'url',
+            'image'   => is_string($imageColumn) ? $imageColumn : 'image',
+            'video'   => is_string($videoColumn) ? $videoColumn : 'video',
+        ];
     }
 
     private function resolveStringValue(string $column): ?string

@@ -20,6 +20,9 @@ use function is_array;
 use function is_string;
 use function is_subclass_of;
 
+use ReflectionClass;
+use Throwable;
+
 final readonly class SocializeManager
 {
     public function __construct(private Repository $repository) {}
@@ -117,6 +120,26 @@ final readonly class SocializeManager
             throw InvalidConfigException::invalidDriver($provider->value, $driverClass, ProviderDriver::class);
         }
 
-        return new $driverClass($providerConfig, $credentials, $httpConfig, $profile);
+        $reflectionClass = new ReflectionClass($driverClass);
+        $constructor     = $reflectionClass->getConstructor();
+
+        if (
+            $constructor === null
+            || $constructor->getNumberOfRequiredParameters() > 4
+            || $constructor->getNumberOfParameters() < 4
+        ) {
+            throw InvalidConfigException::invalidDriverConstructor($provider->value, $driverClass);
+        }
+
+        try
+        {
+            /** @var ProviderDriver $driver */
+            $driver = $reflectionClass->newInstanceArgs([$providerConfig, $credentials, $httpConfig, $profile]);
+
+            return $driver;
+        } catch (Throwable)
+        {
+            throw InvalidConfigException::invalidDriverConstructor($provider->value, $driverClass);
+        }
     }
 }

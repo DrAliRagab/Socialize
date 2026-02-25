@@ -5,6 +5,7 @@ declare(strict_types=1);
 use DrAliRagab\Socialize\Exceptions\ApiException;
 use DrAliRagab\Socialize\Exceptions\InvalidConfigException;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
+use DrAliRagab\Socialize\Exceptions\UnsupportedFeatureException;
 use DrAliRagab\Socialize\Facades\Socialize;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -225,6 +226,10 @@ it('deletes a facebook post', function (): void {
     ]);
 
     expect(Socialize::facebook()->delete('123_456'))->toBeTrue();
+
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
+        && $request->hasHeader('Authorization', 'Bearer fb-token')
+        && ! \array_key_exists('access_token', $request->data()));
 });
 
 it('throws for empty facebook post id on delete', function (): void {
@@ -248,6 +253,16 @@ it('throws for missing facebook content', function (): void {
 
     Socialize::facebook()->share();
 })->throws(InvalidSharePayloadException::class, 'requires at least one');
+
+it('throws for unsupported facebook media ids payload field', function (): void {
+    Http::fake();
+
+    Socialize::facebook()
+        ->message('Unsupported field')
+        ->mediaId('123')
+        ->share()
+    ;
+})->throws(UnsupportedFeatureException::class, 'mediaIds');
 
 it('throws when facebook credentials are missing in selected profile', function (): void {
     Http::fake();

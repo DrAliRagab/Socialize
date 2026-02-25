@@ -712,6 +712,147 @@ it('throws when x media processing times out', function (): void {
     }
 })->throws(ApiException::class, 'processing timed out');
 
+it('respects configured x media processing poll attempts', function (): void {
+    config()->set('socialize.providers.twitter.media_processing_poll_attempts', 2);
+
+    $responseSequence = Http::sequence()
+        ->push(['data' => ['id' => 'm-id']], 200)
+        ->push('', 204)
+        ->push(['data' => ['processing_info' => ['state' => 'pending', 'check_after_secs' => 0]]], 200)
+        ->push(['data' => ['processing_info' => ['state' => 'in_progress', 'check_after_secs' => 0]]], 200)
+        ->push(['data' => ['processing_info' => ['state' => 'in_progress', 'check_after_secs' => 0]]], 200)
+    ;
+
+    Http::fake([
+        'https://api.x.com/2/media/upload*' => $responseSequence,
+    ]);
+
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-x-timeout-configured-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for x configured-timeout test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, str_repeat('v', 256));
+
+    try
+    {
+        Socialize::twitter()
+            ->media($videoPath, 'video')
+            ->share()
+        ;
+    } finally
+    {
+        @unlink($videoPath);
+    }
+})->throws(ApiException::class, 'after 2 attempt(s)');
+
+it('parses configured x media processing poll attempts from numeric strings', function (): void {
+    config()->set('socialize.providers.twitter.media_processing_poll_attempts', '2');
+
+    $responseSequence = Http::sequence()
+        ->push(['data' => ['id' => 'm-id']], 200)
+        ->push('', 204)
+        ->push(['data' => ['processing_info' => ['state' => 'pending', 'check_after_secs' => 0]]], 200)
+        ->push(['data' => ['processing_info' => ['state' => 'in_progress', 'check_after_secs' => 0]]], 200)
+        ->push(['data' => ['processing_info' => ['state' => 'in_progress', 'check_after_secs' => 0]]], 200)
+    ;
+
+    Http::fake([
+        'https://api.x.com/2/media/upload*' => $responseSequence,
+    ]);
+
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-x-timeout-configured-string-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for x configured-string-timeout test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, str_repeat('v', 256));
+
+    try
+    {
+        Socialize::twitter()
+            ->media($videoPath, 'video')
+            ->share()
+        ;
+    } finally
+    {
+        @unlink($videoPath);
+    }
+})->throws(ApiException::class, 'after 2 attempt(s)');
+
+it('falls back to default x media processing poll attempts for invalid config values', function (): void {
+    config()->set('socialize.providers.twitter.media_processing_poll_attempts', ['invalid']);
+
+    $responseSequence = Http::sequence()
+        ->push(['data' => ['id' => 'm-id']], 200)
+        ->push('', 204)
+        ->push(['data' => ['processing_info' => ['state' => 'pending', 'check_after_secs' => 0]]], 200)
+    ;
+
+    for ($i = 0; $i < 15; $i++)
+    {
+        $responseSequence->push(['data' => ['processing_info' => ['state' => 'in_progress', 'check_after_secs' => 0]]], 200);
+    }
+
+    Http::fake([
+        'https://api.x.com/2/media/upload*' => $responseSequence,
+    ]);
+
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-x-timeout-default-config-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for x default-config-timeout test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, str_repeat('v', 256));
+
+    try
+    {
+        Socialize::twitter()
+            ->media($videoPath, 'video')
+            ->share()
+        ;
+    } finally
+    {
+        @unlink($videoPath);
+    }
+})->throws(ApiException::class, 'after 15 attempt(s)');
+
+it('throws when x local media file is empty', function (): void {
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-x-empty-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for x empty-media test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, '');
+
+    try
+    {
+        Socialize::twitter()
+            ->media($videoPath, 'video')
+            ->share()
+        ;
+    } finally
+    {
+        @unlink($videoPath);
+    }
+})->throws(InvalidSharePayloadException::class, 'empty or unreadable');
+
 it('infers x upload mime type from file extensions when content-type is missing', function (): void {
     Http::fake([
         'https://cdn.example.com/no-header.png' => Http::response('png-binary', 200),

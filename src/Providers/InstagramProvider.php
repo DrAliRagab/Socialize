@@ -10,6 +10,7 @@ use DrAliRagab\Socialize\Contracts\ProviderDriver;
 use DrAliRagab\Socialize\Enums\Provider;
 use DrAliRagab\Socialize\Exceptions\ApiException;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
+use DrAliRagab\Socialize\Exceptions\UnsupportedFeatureException;
 use DrAliRagab\Socialize\ValueObjects\SharePayload;
 use DrAliRagab\Socialize\ValueObjects\ShareResult;
 
@@ -39,6 +40,11 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
         if (! $sharePayload->hasAnyCoreContent())
         {
             throw new InvalidSharePayloadException('Instagram share requires imageUrl, videoUrl, or carousel items.');
+        }
+
+        if ($sharePayload->mediaIds() !== [])
+        {
+            throw UnsupportedFeatureException::forProviderPayloadField('mediaIds', $this->provider()->value);
         }
 
         $igId             = (string)$this->credential('ig_id');
@@ -110,9 +116,12 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
             throw new InvalidSharePayloadException('Instagram post id cannot be empty.');
         }
 
-        $response = $this->decode($this->send('DELETE', sprintf('/%s/%s', $this->graphVersion(), $postId), [
-            'access_token' => (string)$this->credential('access_token'),
-        ]));
+        $response = $this->decode($this->send(
+            'DELETE',
+            sprintf('/%s/%s', $this->graphVersion(), $postId),
+            [],
+            $this->headers((string)$this->credential('access_token')),
+        ));
 
         return (bool)($response['success'] ?? false);
     }
@@ -346,9 +355,8 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
         try
         {
             return $this->decode($this->send('GET', sprintf('/%s/%s', $version, $creationId), [
-                'access_token' => $accessToken,
-                'fields'       => 'status_code,status,estimated_time_to_completion',
-            ]));
+                'fields' => 'status_code,status,estimated_time_to_completion',
+            ], $this->headers($accessToken)));
         } catch (ApiException $apiException)
         {
             if (! $this->isUnsupportedEstimatedTimeFieldException($apiException))
@@ -357,9 +365,8 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
             }
 
             return $this->decode($this->send('GET', sprintf('/%s/%s', $version, $creationId), [
-                'access_token' => $accessToken,
-                'fields'       => 'status_code,status',
-            ]));
+                'fields' => 'status_code,status',
+            ], $this->headers($accessToken)));
         }
     }
 
@@ -502,9 +509,8 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
     private function containerStatusDetail(string $creationId, string $accessToken, string $version): string
     {
         $statusBody = $this->decode($this->send('GET', sprintf('/%s/%s', $version, $creationId), [
-            'access_token' => $accessToken,
-            'fields'       => 'status_code,status',
-        ]));
+            'fields' => 'status_code,status',
+        ], $this->headers($accessToken)));
 
         $statusCode = $statusBody['status_code'] ?? null;
         $status     = $statusBody['status']      ?? null;
@@ -663,5 +669,15 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
         {
             throw new InvalidSharePayloadException('Instagram carousel must contain between 2 and 10 media items.');
         }
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function headers(string $accessToken): array
+    {
+        return [
+            'Authorization' => 'Bearer ' . $accessToken,
+        ];
     }
 }

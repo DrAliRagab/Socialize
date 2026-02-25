@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DrAliRagab\Socialize\Providers;
 
 use function base64_encode;
+use function basename;
 
 use DrAliRagab\Socialize\Contracts\ProviderDriver;
 use DrAliRagab\Socialize\Enums\Provider;
@@ -13,12 +14,22 @@ use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\ValueObjects\SharePayload;
 use DrAliRagab\Socialize\ValueObjects\ShareResult;
 
+use function fclose;
+use function feof;
+use function file_exists;
+use function file_get_contents;
+use function filesize;
+
 use const FILTER_VALIDATE_URL;
 
+use function fopen;
+use function fread;
 use function in_array;
 use function is_array;
 use function is_int;
+use function is_readable;
 use function is_string;
+use function mime_content_type;
 use function pathinfo;
 
 use const PATHINFO_EXTENSION;
@@ -26,8 +37,6 @@ use const PHP_EOL;
 
 use function sprintf;
 use function str_contains;
-use function strlen;
-use function substr;
 use function usleep;
 
 final class TwitterProvider extends BaseProvider implements ProviderDriver
@@ -83,11 +92,6 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
         if (is_array($poll) && $poll !== [])
         {
             $body['poll'] = $poll;
-        }
-
-        if ($body === [])
-        {
-            throw new InvalidSharePayloadException('X share payload resolved to empty body.');
         }
 
         $response = $this->decode($this->send('POST', '/2/tweets', $body, $this->headers()));
@@ -199,30 +203,51 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
 
         try
         {
-            $media = $this->loadBinaryMediaSource($prepared['source']);
+            $media = $this->localMediaMetadata($prepared['source']);
 
             $mediaType = $this->inferMediaType($source, $typeHint, $media['mime_type']);
             $mimeType  = $this->resolveMimeType($media['mime_type'], $mediaType, $media['file_name']);
 
             if ($mediaType === 'image')
             {
-                return $this->uploadImage($media['contents'], $mimeType);
+                $contents = (string)file_get_contents($prepared['source']);
+
+                return $this->uploadImage($contents, $mimeType);
             }
 
             $mediaId = $this->uploadInit($media['size'], $mimeType, $mediaType);
 
-            // X chunked APPEND expects chunks up to 1 MB.
-            $chunkSize = 1024 * 1024;
-            $offset    = 0;
-            $segment   = 0;
+            $handle = fopen($prepared['source'], 'rb');
 
-            while ($offset < $media['size'])
+            // @codeCoverageIgnoreStart
+            if ($handle === false)
             {
-                $chunk = substr($media['contents'], $offset, $chunkSize);
+                throw new InvalidSharePayloadException(sprintf('Media source path does not exist or is not readable [%s].', $prepared['source']));
+            }
 
-                $this->uploadAppend($mediaId, $segment, $chunk, $media['file_name']);
-                $offset += strlen($chunk);
-                $segment++;
+            // @codeCoverageIgnoreEnd
+
+            try
+            {
+                // X chunked APPEND expects chunks up to 1 MB.
+                $chunkSize = 1024 * 1024;
+                $segment   = 0;
+
+                while (! feof($handle))
+                {
+                    $chunk = fread($handle, $chunkSize);
+
+                    if ($chunk === false || $chunk === '')
+                    {
+                        break;
+                    }
+
+                    $this->uploadAppend($mediaId, $segment, $chunk, $media['file_name']);
+                    $segment++;
+                }
+            } finally
+            {
+                fclose($handle);
             }
 
             $this->uploadFinalizeAndWait($mediaId);
@@ -232,6 +257,33 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
         {
             $cleanup();
         }
+    }
+
+    /**
+     * @return array{mime_type: ?string, file_name: string, size: int}
+     */
+    private function localMediaMetadata(string $path): array
+    {
+        if (! file_exists($path) || ! is_readable($path))
+        {
+            throw new InvalidSharePayloadException(sprintf('Media source path does not exist or is not readable [%s].', $path));
+        }
+
+        $size = filesize($path);
+
+        if (! is_int($size) || $size <= 0)
+        {
+            throw new InvalidSharePayloadException(sprintf('Media source [%s] is empty or unreadable.', $path));
+        }
+
+        $detectedMime = mime_content_type($path);
+        $mimeType     = is_string($detectedMime) && mb_trim($detectedMime) !== '' ? mb_trim($detectedMime) : null;
+
+        return [
+            'mime_type' => $mimeType,
+            'file_name' => basename($path),
+            'size'      => $size,
+        ];
     }
 
     private function uploadImage(string $contents, string $mimeType): string
@@ -261,7 +313,7 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
 
     private function uploadInit(int $size, string $mimeType, string $mediaType): string
     {
-        $categories = [$this->resolveMediaCategory($mediaType)];
+        $categories = [$this->resolveMediaCategory()];
 
         if ($mediaType === 'video' && ! in_array('amplify_video', $categories, true))
         {
@@ -364,9 +416,10 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
      */
     private function waitForMediaProcessing(string $mediaId, array $processing): void
     {
-        $attempt = 0;
+        $maxAttempts = $this->mediaProcessingPollAttempts();
+        $attempt     = 0;
 
-        while ($attempt < 15)
+        while ($attempt < $maxAttempts)
         {
             $rawState = $processing['state'] ?? null;
             $state    = is_string($rawState) ? mb_strtolower(mb_trim($rawState)) : '';
@@ -441,8 +494,25 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
 
         throw ApiException::invalidResponse(
             $this->provider(),
-            sprintf('X media processing timed out for media id [%s].', $mediaId),
+            sprintf('X media processing timed out for media id [%s] after %d attempt(s).', $mediaId, $maxAttempts),
         );
+    }
+
+    private function mediaProcessingPollAttempts(): int
+    {
+        $configured = $this->providerConfig['media_processing_poll_attempts'] ?? 15;
+
+        if (is_int($configured))
+        {
+            return max(1, $configured);
+        }
+
+        if (is_string($configured) && preg_match('/^-?\d+$/', $configured) === 1)
+        {
+            return max(1, (int)$configured);
+        }
+
+        return 15;
     }
 
     private function resolveMimeType(?string $detectedMime, string $mediaType, string $fileName): string
@@ -480,14 +550,9 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
         };
     }
 
-    private function resolveMediaCategory(string $mediaType): string
+    private function resolveMediaCategory(): string
     {
-        if ($mediaType === 'video')
-        {
-            return 'tweet_video';
-        }
-
-        return 'tweet_image';
+        return 'tweet_video';
     }
 
     /**

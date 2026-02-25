@@ -5,6 +5,7 @@ declare(strict_types=1);
 use DrAliRagab\Socialize\Exceptions\ApiException;
 use DrAliRagab\Socialize\Exceptions\InvalidConfigException;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
+use DrAliRagab\Socialize\Exceptions\UnsupportedFeatureException;
 use DrAliRagab\Socialize\Facades\Socialize;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -158,6 +159,26 @@ it('waits for instagram video container readiness before publish', function (): 
 
     expect($shareResult->id())->toBe('ig-video-ready');
     Http::assertSentCount(4);
+});
+
+it('sends instagram container status polling with authorization header and no access_token field', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'            => Http::response(['id' => 'container-auth-header'], 200),
+        'https://graph.facebook.com/v25.0/container-auth-header*' => Http::response(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish'    => Http::response(['id' => 'ig-auth-header'], 200),
+    ]);
+
+    $shareResult = Socialize::instagram()
+        ->videoUrl('https://cdn.example.com/video-auth.mp4')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('ig-auth-header');
+
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/container-auth-header')
+        && $request->method() === 'GET'
+        && $request->hasHeader('Authorization', 'Bearer ig-token')
+        && ! \array_key_exists('access_token', $request->data()));
 });
 
 it('throws when instagram container status reports error before publish', function (): void {
@@ -424,6 +445,10 @@ it('deletes instagram post', function (): void {
     ]);
 
     expect(Socialize::instagram()->delete('179123'))->toBeTrue();
+
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
+        && $request->hasHeader('Authorization', 'Bearer ig-token')
+        && ! \array_key_exists('access_token', $request->data()));
 });
 
 it('throws for empty instagram post id on delete', function (): void {
@@ -455,6 +480,16 @@ it('fails instagram share with empty payload', function (): void {
 
     Socialize::instagram()->share();
 })->throws(InvalidSharePayloadException::class, 'requires imageUrl, videoUrl, or carousel items');
+
+it('throws for unsupported instagram media ids payload field', function (): void {
+    Http::fake();
+
+    Socialize::instagram()
+        ->imageUrl('https://cdn.example.com/ig.jpg')
+        ->mediaId('123')
+        ->share()
+    ;
+})->throws(UnsupportedFeatureException::class, 'mediaIds');
 
 it('fails instagram share when required credentials are missing', function (): void {
     Http::fake();

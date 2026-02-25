@@ -595,6 +595,39 @@ it('throws when linkedin cannot infer media type from source', function (): void
     }
 })->throws(InvalidSharePayloadException::class, 'Unable to infer media type');
 
+it('throws when linkedin local media path does not exist', function (): void {
+    Socialize::linkedin()
+        ->message('Missing local file')
+        ->media('/path/does-not-exist.jpg', 'image')
+        ->share()
+    ;
+})->throws(InvalidSharePayloadException::class, 'does not exist or is not readable');
+
+it('throws when linkedin local media file is empty', function (): void {
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-li-empty-local-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for linkedin empty-local test.');
+    }
+
+    $imagePath = $tempFile . '.jpg';
+    rename($tempFile, $imagePath);
+    file_put_contents($imagePath, '');
+
+    try
+    {
+        Socialize::linkedin()
+            ->message('Empty local file')
+            ->media($imagePath, 'image')
+            ->share()
+        ;
+    } finally
+    {
+        @unlink($imagePath);
+    }
+})->throws(InvalidSharePayloadException::class, 'empty or unreadable');
+
 it('throws when linkedin author is empty', function (): void {
     config()->set('socialize.providers.linkedin.profiles.default.author', '');
     Http::fake();
@@ -742,6 +775,38 @@ it('throws when linkedin video upload instruction resolves to empty chunk', func
         @unlink($videoPath);
     }
 })->throws(ApiException::class, 'upload chunk is empty');
+
+it('throws when linkedin video upload instruction resolves to partial chunk length mismatch', function (): void {
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-li-length-mismatch-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for LinkedIn length-mismatch test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, 'small');
+
+    Http::fake([
+        'https://api.linkedin.com/rest/videos?action=initializeUpload' => Http::response([
+            'value' => [
+                'video'              => 'urn:li:video:length-mismatch',
+                'uploadInstructions' => [
+                    ['uploadUrl' => 'https://upload.linkedin.com/length-mismatch', 'firstByte' => 2, 'lastByte' => 200],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    try
+    {
+        Socialize::linkedin()->media($videoPath, 'video')->share();
+    } finally
+    {
+        @unlink($videoPath);
+    }
+})->throws(ApiException::class, 'length mismatch');
 
 it('finalizes linkedin video upload without status check when no uploaded part ids are returned', function (): void {
     Http::fake([

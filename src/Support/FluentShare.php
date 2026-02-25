@@ -175,38 +175,11 @@ final class FluentShare
             $entry['type'] = $mediaType;
         }
 
-        $sources = $this->providerOptions['media_sources'] ?? [];
-
-        if (! is_array($sources))
-        {
-            $sources = [];
-        }
-
-        foreach ($sources as $existing)
-        {
-            if (! is_array($existing))
-            {
-                continue;
-            }
-
-            $existingSource = $existing['source'] ?? null;
-            $existingType   = $existing['type']   ?? null;
-
-            if (
-                is_string($existingSource)
-                && $existingSource === $entry['source']
-                && $existingType   === ($entry['type'] ?? null)
-            ) {
-                $this->appendMediaSourceForPayload($entry['source'], $entry['type'] ?? null);
-
-                return $this;
-            }
-        }
-
-        $sources[] = $entry;
         $this->appendMediaSourceForPayload($entry['source'], $entry['type'] ?? null);
 
-        return $this->option('media_sources', $sources);
+        $this->providerOptions['media_sources'] = $this->mediaSources;
+
+        return $this;
     }
 
     /**
@@ -227,6 +200,12 @@ final class FluentShare
         }
 
         $this->providerOptions[$key] = $value;
+
+        if ($key === 'media_sources' && is_array($value))
+        {
+            $this->seedMediaSourcesFromOption($value);
+            $this->providerOptions['media_sources'] = $this->mediaSources;
+        }
 
         return $this;
     }
@@ -388,15 +367,18 @@ final class FluentShare
 
     public function share(): ShareResult
     {
+        $providerOptions                  = $this->providerOptions;
+        $providerOptions['media_sources'] = $this->mediaSources;
+
         return $this->providerDriver->share(new SharePayload(
             message: $this->message,
             link: $this->link,
             imageUrl: $this->imageUrl,
             videoUrl: $this->videoUrl,
             mediaIds: $this->mediaIds,
-            providerOptions: $this->providerOptions,
+            providerOptions: $providerOptions,
             metadata: $this->metadata,
-            mediaSources: $this->resolvedPayloadMediaSources(),
+            mediaSources: $providerOptions['media_sources'],
         ));
     }
 
@@ -468,45 +450,37 @@ final class FluentShare
     }
 
     /**
-     * @return list<array{source: string, type: ?string}>
+     * @param array<mixed, mixed> $sources
      */
-    private function resolvedPayloadMediaSources(): array
+    private function seedMediaSourcesFromOption(array $sources): void
     {
-        $sources = $this->mediaSources;
-        $seeded  = $this->providerOptions['media_sources'] ?? null;
-
-        if (! is_array($seeded))
+        foreach ($sources as $source)
         {
-            return $sources;
-        }
-
-        foreach ($seeded as $seededSource)
-        {
-            if (! is_array($seededSource))
+            if (! is_array($source))
             {
                 continue;
             }
 
-            $source = $seededSource['source'] ?? null;
-            $type   = $seededSource['type']   ?? null;
+            $rawSource = $source['source'] ?? null;
+            $rawType   = $source['type']   ?? null;
 
-            if (! is_string($source))
+            if (! is_string($rawSource))
             {
                 continue;
             }
 
-            if (mb_trim($source) === '')
+            $normalizedSource = mb_trim($rawSource);
+
+            if ($normalizedSource === '')
             {
                 continue;
             }
 
-            $normalizedType = is_string($type) && mb_trim($type) !== ''
-                ? mb_strtolower(mb_trim($type))
+            $normalizedType = is_string($rawType) && mb_trim($rawType) !== ''
+                ? mb_strtolower(mb_trim($rawType))
                 : null;
 
-            $this->appendMediaSourceForPayload(mb_trim($source), $normalizedType);
+            $this->appendMediaSourceForPayload($normalizedSource, $normalizedType);
         }
-
-        return $this->mediaSources;
     }
 }

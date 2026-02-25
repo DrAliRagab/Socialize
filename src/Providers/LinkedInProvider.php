@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DrAliRagab\Socialize\Providers;
 
 use function array_key_exists;
+use function basename;
 
 use DrAliRagab\Socialize\Contracts\ProviderDriver;
 use DrAliRagab\Socialize\Enums\Provider;
@@ -14,12 +15,23 @@ use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\ValueObjects\SharePayload;
 use DrAliRagab\Socialize\ValueObjects\ShareResult;
 
+use function fclose;
+use function feof;
+use function file_exists;
+use function file_get_contents;
+use function filesize;
+
 use const FILTER_VALIDATE_URL;
 
+use function fopen;
+use function fread;
+use function fseek;
 use function in_array;
 use function is_array;
 use function is_int;
+use function is_readable;
 use function is_string;
+use function mime_content_type;
 
 use const PHP_EOL;
 
@@ -27,7 +39,7 @@ use function rawurlencode;
 use function sprintf;
 use function str_contains;
 use function str_starts_with;
-use function substr;
+use function strlen;
 use function usleep;
 
 final class LinkedInProvider extends BaseProvider implements ProviderDriver
@@ -66,7 +78,7 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
 
         $payloadBody = [
             'author'       => $this->authorUrn(),
-            'commentary'   => $this->buildCommentary($sharePayload, $hasMediaUrn),
+            'commentary'   => $this->buildCommentary($sharePayload),
             'visibility'   => $visibility,
             'distribution' => [
                 'feedDistribution'               => $distribution,
@@ -186,7 +198,7 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
         return $version;
     }
 
-    private function buildCommentary(SharePayload $sharePayload, bool $hasMediaUrn = false): string
+    private function buildCommentary(SharePayload $sharePayload): string
     {
         $parts = [];
 
@@ -200,14 +212,7 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
             $parts[] = mb_trim($sharePayload->link());
         }
 
-        $commentary = implode(PHP_EOL . PHP_EOL, $parts);
-
-        if ($commentary === '' && ! $hasMediaUrn)
-        {
-            throw new InvalidSharePayloadException('LinkedIn requires non-empty commentary, link, or media_urn.');
-        }
-
-        return $commentary;
+        return implode(PHP_EOL . PHP_EOL, $parts);
     }
 
     private function articleTitle(SharePayload $sharePayload): string
@@ -275,19 +280,48 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
 
         try
         {
-            $media     = $this->loadBinaryMediaSource($prepared['source']);
+            $media     = $this->localMediaMetadata($prepared['source']);
             $mediaType = $this->inferMediaType($source, $typeHint, $media['mime_type']);
 
             if ($mediaType === 'image')
             {
-                return $this->uploadImageAndReturnUrn($media['contents'], $media['mime_type']);
+                $contents = (string)file_get_contents($prepared['source']);
+
+                return $this->uploadImageAndReturnUrn($contents, $media['mime_type']);
             }
 
-            return $this->uploadVideoAndReturnUrn($media['contents'], $media['size'], $media['mime_type']);
+            return $this->uploadVideoAndReturnUrn($prepared['source'], $media['size'], $media['mime_type']);
         } finally
         {
             $cleanup();
         }
+    }
+
+    /**
+     * @return array{mime_type: ?string, file_name: string, size: int}
+     */
+    private function localMediaMetadata(string $path): array
+    {
+        if (! file_exists($path) || ! is_readable($path))
+        {
+            throw new InvalidSharePayloadException(sprintf('Media source path does not exist or is not readable [%s].', $path));
+        }
+
+        $size = filesize($path);
+
+        if (! is_int($size) || $size <= 0)
+        {
+            throw new InvalidSharePayloadException(sprintf('Media source [%s] is empty or unreadable.', $path));
+        }
+
+        $detectedMime = mime_content_type($path);
+        $mimeType     = is_string($detectedMime) && mb_trim($detectedMime) !== '' ? mb_trim($detectedMime) : null;
+
+        return [
+            'mime_type' => $mimeType,
+            'file_name' => basename($path),
+            'size'      => $size,
+        ];
     }
 
     private function uploadImageAndReturnUrn(string $contents, ?string $mimeType): string
@@ -327,7 +361,7 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
         return mb_trim($imageUrn);
     }
 
-    private function uploadVideoAndReturnUrn(string $contents, int $size, ?string $mimeType): string
+    private function uploadVideoAndReturnUrn(string $filePath, int $size, ?string $mimeType): string
     {
         $initResponse = $this->decode($this->send(
             'POST',
@@ -410,13 +444,7 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
                     continue;
                 }
 
-                $length = ($lastByte - $firstByte) + 1;
-                $chunk  = substr($contents, $firstByte, $length);
-
-                if ($chunk === '')
-                {
-                    throw ApiException::invalidResponse($this->provider(), 'LinkedIn video upload chunk is empty.');
-                }
+                $chunk = $this->readRangeFromFile($filePath, $firstByte, $lastByte);
 
                 $etag = $this->uploadToLinkedInAssetUrl(
                     uploadUrl: mb_trim($uploadUrl),
@@ -445,9 +473,9 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
                 );
             }
 
-            $etag = $this->uploadToLinkedInAssetUrl(
+            $etag = $this->uploadFileToLinkedInAssetUrl(
                 uploadUrl: mb_trim($fallbackUploadUrl),
-                contents: $contents,
+                filePath: $filePath,
                 mimeType: $this->linkedInContentType($mimeType, 'video'),
             );
 
@@ -462,12 +490,95 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
         return mb_trim($videoUrn);
     }
 
+    private function readRangeFromFile(string $filePath, int $firstByte, int $lastByte): string
+    {
+        $length = ($lastByte - $firstByte) + 1;
+
+        $handle = fopen($filePath, 'rb');
+
+        // @codeCoverageIgnoreStart
+        if ($handle === false)
+        {
+            throw new InvalidSharePayloadException(sprintf('Media source path does not exist or is not readable [%s].', $filePath));
+        }
+
+        // @codeCoverageIgnoreEnd
+
+        try
+        {
+            fseek($handle, $firstByte);
+
+            $remaining = $length;
+            $chunk     = '';
+
+            while ($remaining > 0 && ! feof($handle))
+            {
+                $readSize = min($remaining, 1024 * 1024);
+                $buffer   = fread($handle, $readSize);
+
+                // @codeCoverageIgnoreStart
+                if ($buffer === false)
+                {
+                    throw ApiException::invalidResponse($this->provider(), 'Failed reading LinkedIn video upload chunk.');
+                }
+
+                // @codeCoverageIgnoreEnd
+
+                if ($buffer === '')
+                {
+                    break;
+                }
+
+                $chunk .= $buffer;
+                $remaining -= strlen($buffer);
+            }
+        } finally
+        {
+            fclose($handle);
+        }
+
+        if ($chunk === '')
+        {
+            throw ApiException::invalidResponse($this->provider(), 'LinkedIn video upload chunk is empty.');
+        }
+
+        if (strlen($chunk) !== $length)
+        {
+            throw ApiException::invalidResponse($this->provider(), 'LinkedIn video upload chunk length mismatch.');
+        }
+
+        return $chunk;
+    }
+
     private function uploadToLinkedInAssetUrl(string $uploadUrl, string $contents, string $mimeType): ?string
     {
         $response = $this->sendBinary(
             method: 'PUT',
             url: $uploadUrl,
             contents: $contents,
+            contentType: $mimeType,
+            headers: [
+                'Authorization' => 'Bearer ' . $this->credential('access_token'),
+                'Content-Type'  => $mimeType,
+            ],
+        );
+
+        $etag = mb_trim((string)$response->header('etag'));
+
+        if ($etag === '')
+        {
+            return null;
+        }
+
+        return mb_trim($etag, "\"'");
+    }
+
+    private function uploadFileToLinkedInAssetUrl(string $uploadUrl, string $filePath, string $mimeType): ?string
+    {
+        $response = $this->sendBinaryFile(
+            method: 'PUT',
+            url: $uploadUrl,
+            filePath: $filePath,
             contentType: $mimeType,
             headers: [
                 'Authorization' => 'Bearer ' . $this->credential('access_token'),

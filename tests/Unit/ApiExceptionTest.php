@@ -31,12 +31,33 @@ it('builds invalid response exception with status 500', function (): void {
     ;
 });
 
+it('supports invalid response exception custom status body and previous', function (): void {
+    $previous = new RuntimeException('network timeout');
+
+    $apiException = ApiException::invalidResponse(
+        Provider::LinkedIn,
+        'transport failed',
+        422,
+        ['error' => ['message' => 'unprocessable']],
+        $previous,
+    );
+
+    expect($apiException->provider())->toBe(Provider::LinkedIn)
+        ->and($apiException->status())->toBe(422)
+        ->and($apiException->responseBody())->toBe(['error' => ['message' => 'unprocessable']])
+        ->and($apiException->getPrevious())->toBe($previous)
+    ;
+});
+
 it('builds api exception from provider payload with explicit status and body', function (): void {
+    $previous = new RuntimeException('original');
+
     $apiException = ApiException::fromPayload(
         Provider::Instagram,
         400,
         'Container failed',
         ['status_code' => 'ERROR', 'status' => 'ERROR'],
+        $previous,
     );
 
     expect($apiException->provider())->toBe(Provider::Instagram)
@@ -44,6 +65,7 @@ it('builds api exception from provider payload with explicit status and body', f
         ->and($apiException->responseBody())->toBe(['status_code' => 'ERROR', 'status' => 'ERROR'])
         ->and($apiException->getMessage())->toContain('status 400')
         ->and($apiException->getMessage())->toContain('Container failed')
+        ->and($apiException->getPrevious())->toBe($previous)
     ;
 });
 

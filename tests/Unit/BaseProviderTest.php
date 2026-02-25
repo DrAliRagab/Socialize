@@ -89,6 +89,11 @@ function makeBaseProviderStub(array $providerConfig = [], array $credentials = [
             return $this->sendBinary($method, $url, $contents, $contentType, $headers);
         }
 
+        public function callSendBinaryFile(string $method, string $url, string $filePath, string $contentType, array $headers = []): Response
+        {
+            return $this->sendBinaryFile($method, $url, $filePath, $contentType, $headers);
+        }
+
         public function callSendMultipart(string $method, string $url, array $fields, array $headers = [], ?array $attachment = null): Response
         {
             return $this->sendMultipart($method, $url, $fields, $headers, $attachment);
@@ -148,6 +153,7 @@ it('supports binary and multipart request helpers in base provider', function ()
     $provider = makeBaseProviderStub();
 
     expect($provider->callSendBinary('PUT', 'https://upload.example.com/binary', 'bytes', 'application/octet-stream')->status())->toBe(200)
+        ->and($provider->callSendBinaryFile('PUT', 'https://upload.example.com/binary', __FILE__, 'application/octet-stream')->status())->toBe(200)
         ->and($provider->callSendMultipart(
             'POST',
             'https://upload.example.com/multipart',
@@ -177,7 +183,45 @@ it('wraps binary and multipart helper request exceptions as api exceptions', fun
     expect(fn (): mixed => $provider->callSendMultipart('POST', 'https://upload.example.com/multipart', ['command' => 'INIT']))
         ->toThrow(ApiException::class, 'request failed before receiving a valid response')
     ;
+
+    expect(fn (): mixed => $provider->callSendBinaryFile('PUT', 'https://upload.example.com/binary', __FILE__, 'application/octet-stream'))
+        ->toThrow(ApiException::class, 'request failed before receiving a valid response')
+    ;
 });
+
+it('preserves previous exception when transport fails before response', function (): void {
+    Http::fake(fn (): mixed => throw new RuntimeException('transport exploded'));
+
+    $provider = makeBaseProviderStub();
+
+    try
+    {
+        $provider->callSend('GET', '/transport-error');
+    } catch (ApiException $apiException)
+    {
+        expect($apiException->getPrevious())->toBeInstanceOf(RuntimeException::class);
+
+        return;
+    }
+
+    throw new RuntimeException('Expected ApiException was not thrown.');
+});
+
+it('throws for unreadable binary file helper path', function (): void {
+    $provider = makeBaseProviderStub();
+
+    $provider->callSendBinaryFile('PUT', 'https://upload.example.com/binary', '/path/not-found.bin', 'application/octet-stream');
+})->throws(InvalidSharePayloadException::class, 'does not exist or is not readable');
+
+it('throws api exception when binary file helper receives failed response', function (): void {
+    Http::fake([
+        'https://upload.example.com/binary' => Http::response(['message' => 'bad upload'], 500),
+    ]);
+
+    $provider = makeBaseProviderStub();
+
+    $provider->callSendBinaryFile('PUT', 'https://upload.example.com/binary', __FILE__, 'application/octet-stream');
+})->throws(ApiException::class, 'status 500');
 
 it('wraps unsupported HTTP method in api exception', function (): void {
     $provider = makeBaseProviderStub();
@@ -257,7 +301,7 @@ it('normalizes and deduplicates media sources from payload', function (): void {
     ]);
 });
 
-it('ignores blank structured media sources while merging payload media inputs', function (): void {
+it('normalizes structured media sources while merging payload media inputs', function (): void {
     $provider = makeBaseProviderStub();
 
     $payload = new SharePayload(
@@ -269,7 +313,6 @@ it('ignores blank structured media sources while merging payload media inputs', 
         providerOptions: [],
         metadata: [],
         mediaSources: [
-            ['source' => '   ', 'type' => 'image'],
             ['source' => 'https://cdn.example.com/structured.jpg', 'type' => 'IMAGE'],
         ],
     );
@@ -724,6 +767,48 @@ it('throws when writing downloaded upload source to temporary file fails', funct
     }
 });
 
+it('throws api exception when remote upload source request fails before response', function (): void {
+    Http::fake(fn (): mixed => throw new RuntimeException('download transport fail'));
+
+    $provider = makeBaseProviderStub();
+
+    $provider->callPrepareUploadSource('https://cdn.example.com/prepare-fail.jpg');
+})->throws(ApiException::class, 'media download failed before receiving a valid response');
+
+it('throws api exception when remote upload source returns failed status', function (): void {
+    Http::fake([
+        'https://cdn.example.com/prepare-status-fail.jpg' => Http::response(['message' => 'forbidden'], 403),
+    ]);
+
+    $provider = makeBaseProviderStub();
+
+    $provider->callPrepareUploadSource('https://cdn.example.com/prepare-status-fail.jpg');
+})->throws(ApiException::class, 'status 403');
+
+it('throws when remote upload source response body is empty', function (): void {
+    Http::fake([
+        'https://cdn.example.com/prepare-empty.jpg' => Http::response('', 200),
+    ]);
+
+    $provider = makeBaseProviderStub();
+
+    $provider->callPrepareUploadSource('https://cdn.example.com/prepare-empty.jpg');
+})->throws(InvalidSharePayloadException::class, 'Downloaded media');
+
+it('uses media.bin fallback naming when URL has no file path segment', function (): void {
+    Http::fake([
+        'https://cdn.example.com' => Http::response('binary', 200),
+    ]);
+
+    $provider = makeBaseProviderStub();
+    $prepared = $provider->callPrepareUploadSource('https://cdn.example.com');
+
+    expect(pathinfo((string)$prepared['source'], \PATHINFO_EXTENSION))->toBe('bin');
+
+    $cleanup = $prepared['cleanup'];
+    $cleanup();
+});
+
 it('swallows unlink warnings in upload source cleanup callback', function (): void {
     Http::fake([
         'https://cdn.example.com/cleanup-unlink-warning' => Http::response('image-bytes', 200, ['Content-Type' => 'image/jpeg']),
@@ -799,7 +884,7 @@ it('handles upload source preparation when mime type is missing or unsupported',
     $preparedNoHeader = $provider->callPrepareUploadSource('https://cdn.example.com/no-content-type');
     $noHeaderPath     = $preparedNoHeader['source'];
 
-    expect(pathinfo((string)$noHeaderPath, \PATHINFO_EXTENSION))->toBe('');
+    expect(pathinfo((string)$noHeaderPath, \PATHINFO_EXTENSION))->toBe('bin');
 
     $cleanup = $preparedNoHeader['cleanup'];
     $cleanup();
@@ -811,7 +896,7 @@ it('handles upload source preparation when mime type is missing or unsupported',
     $preparedUnsupported = $provider->callPrepareUploadSource('https://cdn.example.com/unsupported-type');
     $unsupportedPath     = $preparedUnsupported['source'];
 
-    expect(pathinfo((string)$unsupportedPath, \PATHINFO_EXTENSION))->toBe('');
+    expect(pathinfo((string)$unsupportedPath, \PATHINFO_EXTENSION))->toBe('bin');
 
     $cleanup = $preparedUnsupported['cleanup'];
     $cleanup();

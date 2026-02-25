@@ -209,6 +209,25 @@ it('ignores seeded media source entries with non-string or blank source values',
     Http::assertSentCount(3);
 });
 
+it('normalizes seeded media source entries with non-string media type to null', function (): void {
+    Http::fake([
+        'https://cdn.example.com/type-null.jpg' => Http::response('image-binary', 200, ['Content-Type' => 'image/jpeg']),
+        'https://api.x.com/2/media/upload*'     => Http::sequence()->push(['data' => ['id' => 'media-type-null']], 200),
+        'https://api.x.com/2/tweets'            => Http::response(['data' => ['id' => 'post-type-null']], 200),
+    ]);
+
+    $shareResult = Socialize::twitter()
+        ->option('media_sources', [
+            ['source' => 'https://cdn.example.com/type-null.jpg', 'type' => 123],
+        ])
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('post-type-null');
+
+    Http::assertSentCount(3);
+});
+
 it('supports sequential sharing across providers in a single flow', function (): void {
     Http::fake([
         'https://graph.facebook.com/*'        => Http::response(['id' => 'fb-seq'], 200),

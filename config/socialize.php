@@ -60,8 +60,9 @@ return [
         ],
 
         'twitter' => [
-            'base_url' => env('SOCIALIZE_TWITTER_BASE_URL', 'https://api.x.com'),
-            'profiles' => [
+            'base_url'                       => env('SOCIALIZE_TWITTER_BASE_URL', 'https://api.x.com'),
+            'media_processing_poll_attempts' => (int)env('SOCIALIZE_TWITTER_MEDIA_PROCESSING_POLL_ATTEMPTS', 15),
+            'profiles'                       => [
                 'default' => [
                     'bearer_token' => env('SOCIALIZE_TWITTER_BEARER_TOKEN'),
                 ],

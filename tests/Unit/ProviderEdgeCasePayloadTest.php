@@ -37,7 +37,7 @@ it('rejects x payloads that collapse to an empty request body', function (): voi
         providerOptions: [],
         metadata: [],
     ));
-})->throws(InvalidSharePayloadException::class, 'payload resolved to empty body');
+})->throws(InvalidSharePayloadException::class, 'requires text, link, or media ids');
 
 it('rejects linkedin payloads with whitespace-only commentary and no media urn', function (): void {
     $provider = new LinkedInProvider(
@@ -56,7 +56,7 @@ it('rejects linkedin payloads with whitespace-only commentary and no media urn',
         providerOptions: [],
         metadata: [],
     ));
-})->throws(InvalidSharePayloadException::class, 'requires non-empty commentary');
+})->throws(InvalidSharePayloadException::class, 'requires text/link content or a media URN');
 
 it('rejects linkedin payloads with empty visibility after normalization', function (): void {
     $provider = new LinkedInProvider(

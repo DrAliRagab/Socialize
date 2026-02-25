@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use DrAliRagab\Socialize\Concerns\CanShareSocially;
 use DrAliRagab\Socialize\Tests\Fixtures\PostModel;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -105,4 +107,72 @@ it('maps configured video column when sharing models', function (): void {
 
     Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/videos')
         && ($request->data()['file_url'] ?? null) === 'https://cdn.example.com/model-video.mp4');
+});
+
+it('exposes a share builder through trait for advanced provider options before share', function (): void {
+    Http::fake([
+        'https://api.linkedin.com/rest/posts' => Http::response(['id' => 'urn:li:share:builder-trait'], 201),
+    ]);
+
+    $post = new PostModel([
+        'title' => 'Builder title',
+        'url'   => 'https://example.com/trait-builder',
+    ]);
+
+    $shareResult = $post->shareBuilderTo('linkedin')
+        ->visibility('CONNECTIONS')
+        ->distribution('MAIN_FEED')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('urn:li:share:builder-trait');
+});
+
+it('allows overriding trait social column mapping via socializeColumns hook', function (): void {
+    Http::fake([
+        'https://api.x.com/2/tweets' => Http::response(['data' => ['id' => 'x-custom-columns']], 200),
+    ]);
+
+    $model = new class(['headline' => 'Custom headline', 'target' => ['url' => 'https://example.com/custom']]) extends Model {
+        use CanShareSocially;
+
+        protected $guarded = [];
+
+        /**
+         * @return array{message: string, link: string, image: string, video: string}
+         */
+        protected function socializeColumns(): array
+        {
+            return [
+                'message' => 'headline',
+                'link'    => 'target.url',
+                'image'   => 'missing.image',
+                'video'   => 'missing.video',
+            ];
+        }
+    };
+
+    $shareResult = $model->shareToTwitter();
+
+    expect($shareResult->id())->toBe('x-custom-columns');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.x.com/2/tweets'
+        && ($request->data()['text'] ?? null)                       === "Custom headline\n\nhttps://example.com/custom");
+});
+
+it('falls back to default model columns when socialize.model_columns is not an array', function (): void {
+    config()->set('socialize.model_columns', 'invalid-config');
+
+    Http::fake([
+        'https://api.x.com/2/tweets' => Http::response(['data' => ['id' => 'x-default-columns']], 200),
+    ]);
+
+    $post = new PostModel([
+        'title' => 'Fallback title',
+        'url'   => 'https://example.com/fallback',
+    ]);
+
+    $shareResult = $post->shareToTwitter();
+
+    expect($shareResult->id())->toBe('x-default-columns');
 });

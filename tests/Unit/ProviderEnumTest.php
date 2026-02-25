@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use DrAliRagab\Socialize\Enums\Provider;
-use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
+use DrAliRagab\Socialize\Exceptions\InvalidProviderException;
 
 it('resolves provider aliases correctly', function (): void {
     expect(Provider::fromString('fb'))->toBe(Provider::Facebook)
@@ -16,4 +16,4 @@ it('resolves provider aliases correctly', function (): void {
 
 it('throws for unsupported provider', function (): void {
     Provider::fromString('myspace');
-})->throws(InvalidSharePayloadException::class);
+})->throws(InvalidProviderException::class);

@@ -13,6 +13,8 @@ use function is_array;
 use function is_string;
 use function sprintf;
 
+use Throwable;
+
 final class ApiException extends SocializeException
 {
     /**
@@ -23,8 +25,9 @@ final class ApiException extends SocializeException
         private readonly Provider $provider,
         private readonly int $status,
         private readonly array $responseBody = [],
+        ?Throwable $throwable = null,
     ) {
-        parent::__construct($message);
+        parent::__construct($message, 0, $throwable);
     }
 
     public static function fromResponse(Provider $provider, Response $response): self
@@ -42,21 +45,35 @@ final class ApiException extends SocializeException
         );
     }
 
-    public static function invalidResponse(Provider $provider, string $message): self
-    {
-        return new self($message, $provider, 500);
+    /**
+     * @param array<string, mixed> $responseBody
+     */
+    public static function invalidResponse(
+        Provider $provider,
+        string $message,
+        int $status = 500,
+        array $responseBody = [],
+        ?Throwable $throwable = null,
+    ): self {
+        return new self($message, $provider, $status, $responseBody, $throwable);
     }
 
     /**
      * @param array<string, mixed> $responseBody
      */
-    public static function fromPayload(Provider $provider, int $status, string $message, array $responseBody = []): self
-    {
+    public static function fromPayload(
+        Provider $provider,
+        int $status,
+        string $message,
+        array $responseBody = [],
+        ?Throwable $throwable = null,
+    ): self {
         return new self(
             sprintf('%s API request failed with status %d: %s', ucfirst($provider->value), $status, $message),
             $provider,
             $status,
             $responseBody,
+            $throwable,
         );
     }
 

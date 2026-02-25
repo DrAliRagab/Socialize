@@ -12,4 +12,9 @@ final class UnsupportedFeatureException extends SocializeException
     {
         return new self(sprintf('This method is only available for [%s], current provider is [%s].', $allowedProviders, $currentProvider));
     }
+
+    public static function forProviderPayloadField(string $field, string $provider): self
+    {
+        return new self(sprintf('Payload field [%s] is not supported by provider [%s].', $field, $provider));
+    }
 }

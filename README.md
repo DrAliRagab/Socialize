@@ -136,7 +136,8 @@ General:
 - `SOCIALIZE_DEFAULT_PROFILE` (optional, default: `default`)
 - `SOCIALIZE_HTTP_TIMEOUT` (optional, default: `120`)
 - `SOCIALIZE_HTTP_CONNECT_TIMEOUT` (optional, default: `30`)
-- `SOCIALIZE_HTTP_RETRIES` (optional)
+- `SOCIALIZE_HTTP_RETRIES` (optional, default: `1`)
+  - This maps directly to Laravel `Http::retry($times, ...)`, so the value is total attempts. `1` means no retry after the first attempt.
 - `SOCIALIZE_HTTP_RETRY_SLEEP_MS` (optional)
 - `SOCIALIZE_TEMP_MEDIA_DISK` (optional, default: `public`)
 - `SOCIALIZE_TEMP_MEDIA_DIRECTORY` (optional, default: `socialize-temp`)
@@ -159,6 +160,7 @@ Instagram:
 X (Twitter):
 - `SOCIALIZE_TWITTER_BEARER_TOKEN` (required)
 - `SOCIALIZE_TWITTER_BASE_URL` (optional)
+- `SOCIALIZE_TWITTER_MEDIA_PROCESSING_POLL_ATTEMPTS` (optional, default: `15`)
   - Must be an OAuth 2.0 **User Context** token (app-only bearer tokens are rejected by X for post/media endpoints).
   - Required OAuth scopes for full Socialize X support: `tweet.read tweet.write users.read media.write` (plus `offline.access` if you need refresh tokens).
 

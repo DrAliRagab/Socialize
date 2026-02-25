@@ -31,4 +31,15 @@ final class InvalidConfigException extends SocializeException
             sprintf('Driver [%s] is invalid for provider [%s]. It must implement [%s].', $driverClass, $provider, $contract),
         );
     }
+
+    public static function invalidDriverConstructor(string $provider, string $driverClass): self
+    {
+        return new self(
+            sprintf(
+                'Driver [%s] for provider [%s] must define a constructor compatible with (array $providerConfig, array $credentials, array $httpConfig, string $profile).',
+                $driverClass,
+                $provider,
+            ),
+        );
+    }
 }

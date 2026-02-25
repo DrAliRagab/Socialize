@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
+use DrAliRagab\Socialize\Contracts\ProviderDriver;
 use DrAliRagab\Socialize\Enums\Provider;
 use DrAliRagab\Socialize\Exceptions\InvalidConfigException;
 use DrAliRagab\Socialize\SocializeManager;
 use DrAliRagab\Socialize\Support\FluentShare;
+use DrAliRagab\Socialize\ValueObjects\SharePayload;
+use DrAliRagab\Socialize\ValueObjects\ShareResult;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -58,6 +61,18 @@ it('throws when configured driver class is invalid', function (): void {
     app(SocializeManager::class)->facebook();
 })->throws(InvalidConfigException::class, 'is invalid for provider [facebook]');
 
+it('throws a clear error when configured custom driver constructor is incompatible', function (): void {
+    config()->set('socialize.drivers.facebook', InvalidFacebookConstructorDriver::class);
+
+    app(SocializeManager::class)->facebook();
+})->throws(InvalidConfigException::class, 'must define a constructor compatible');
+
+it('throws a clear error when configured custom driver constructor throws during instantiation', function (): void {
+    config()->set('socialize.drivers.facebook', ThrowingFacebookDriver::class);
+
+    app(SocializeManager::class)->facebook();
+})->throws(InvalidConfigException::class, 'must define a constructor compatible');
+
 it('falls back to default driver when configured driver class is blank', function (): void {
     config()->set('socialize.drivers.facebook', '   ');
 
@@ -92,3 +107,44 @@ it('allows unknown option keys when strict options are disabled', function (): v
 
     Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/12345/feed');
 });
+
+final class InvalidFacebookConstructorDriver implements ProviderDriver
+{
+    public function provider(): Provider
+    {
+        return Provider::Facebook;
+    }
+
+    public function share(SharePayload $sharePayload): ShareResult
+    {
+        return new ShareResult(Provider::Facebook, 'invalid', null);
+    }
+
+    public function delete(string $postId): bool
+    {
+        return false;
+    }
+}
+
+final readonly class ThrowingFacebookDriver implements ProviderDriver
+{
+    public function __construct(array $providerConfig, array $credentials, array $httpConfig, string $profile)
+    {
+        throw new RuntimeException('constructor boom for profile: ' . $profile . ' (' . \count($providerConfig) . '/' . \count($credentials) . '/' . \count($httpConfig) . ')');
+    }
+
+    public function provider(): Provider
+    {
+        return Provider::Facebook;
+    }
+
+    public function share(SharePayload $sharePayload): ShareResult
+    {
+        return new ShareResult(Provider::Facebook, 'throwing', null);
+    }
+
+    public function delete(string $postId): bool
+    {
+        return false;
+    }
+}

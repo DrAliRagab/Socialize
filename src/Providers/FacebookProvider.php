@@ -8,6 +8,7 @@ use DrAliRagab\Socialize\Contracts\ProviderDriver;
 use DrAliRagab\Socialize\Enums\Provider;
 use DrAliRagab\Socialize\Exceptions\ApiException;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
+use DrAliRagab\Socialize\Exceptions\UnsupportedFeatureException;
 use DrAliRagab\Socialize\ValueObjects\SharePayload;
 use DrAliRagab\Socialize\ValueObjects\ShareResult;
 
@@ -38,6 +39,11 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
         if (! $sharePayload->hasAnyCoreContent())
         {
             throw new InvalidSharePayloadException('Facebook share requires at least one of message, link, imageUrl, or videoUrl.');
+        }
+
+        if ($sharePayload->mediaIds() !== [])
+        {
+            throw UnsupportedFeatureException::forProviderPayloadField('mediaIds', $this->provider()->value);
         }
 
         $pageId           = (string)$this->credential('page_id');
@@ -129,9 +135,14 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
         }
 
         $endpoint = sprintf('/%s/%s', $this->graphVersion(), $postId);
-        $response = $this->decode($this->send('DELETE', $endpoint, [
-            'access_token' => (string)$this->credential('access_token'),
-        ]));
+        $response = $this->decode($this->send(
+            'DELETE',
+            $endpoint,
+            [],
+            [
+                'Authorization' => 'Bearer ' . $this->credential('access_token'),
+            ],
+        ));
 
         return (bool)($response['success'] ?? false);
     }
