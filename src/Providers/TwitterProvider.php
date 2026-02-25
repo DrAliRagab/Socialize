@@ -13,7 +13,6 @@ use DrAliRagab\Socialize\ValueObjects\ShareResult;
 
 use const FILTER_VALIDATE_URL;
 
-use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 
 use function in_array;
@@ -234,13 +233,20 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
 
     private function uploadInit(int $size, string $mimeType, string $mediaType): string
     {
-        $response = $this->uploadCommand('INIT', [
+        $response = $this->decode($this->send('POST', '/2/media/upload/initialize', [
             'total_bytes'    => $size,
             'media_type'     => $mimeType,
-            'media_category' => $mediaType === 'video' ? 'tweet_video' : 'tweet_image',
-        ]);
+            'media_category' => $this->resolveMediaCategory($mediaType, $mimeType),
+            'shared'         => false,
+        ], $this->headers()));
 
-        $mediaId = $response['media_id_string'] ?? $response['media_id'] ?? null;
+        $data    = $response['data'] ?? null;
+        $mediaId = is_array($data) ? ($data['id'] ?? null) : null;
+
+        if (! is_string($mediaId) || $mediaId === '')
+        {
+            $mediaId = $response['media_id_string'] ?? $response['media_id'] ?? null;
+        }
 
         if (! is_string($mediaId) || $mediaId === '')
         {
@@ -252,10 +258,17 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
 
     private function uploadAppend(string $mediaId, int $segment, string $chunk, string $fileName): void
     {
-        $response = $this->uploadRequest()
+        $response = Http::withHeaders($this->headers())
+            ->baseUrl($this->baseUrl())
+            ->timeout($this->intConfig('timeout', 15))
+            ->connectTimeout($this->intConfig('connect_timeout', 10))
+            ->retry(
+                $this->intConfig('retries', 1),
+                $this->intConfig('retry_sleep_ms', 150),
+                throw: false,
+            )
             ->attach('media', $chunk, $fileName)
-            ->post('/1.1/media/upload.json', [
-                'command'       => 'APPEND',
+            ->post(sprintf('/2/media/upload/%s/append', $mediaId), [
                 'media_id'      => $mediaId,
                 'segment_index' => $segment,
             ])
@@ -269,11 +282,14 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
 
     private function uploadFinalizeAndWait(string $mediaId): void
     {
-        $finalizeResponse = $this->uploadCommand('FINALIZE', [
-            'media_id' => $mediaId,
-        ]);
+        $finalizeResponse = $this->decode($this->send('POST', sprintf('/2/media/upload/%s/finalize', $mediaId), [], $this->headers()));
+        $data             = $finalizeResponse['data'] ?? null;
+        $processing       = is_array($data) ? ($data['processing_info'] ?? null) : null;
 
-        $processing = $finalizeResponse['processing_info'] ?? null;
+        if (! is_array($processing))
+        {
+            $processing = $finalizeResponse['processing_info'] ?? null;
+        }
 
         if (! is_array($processing))
         {
@@ -341,11 +357,18 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
                 usleep($waitSeconds * 1_000_000);
             }
 
-            $status = $this->uploadCommand('STATUS', [
+            $status = $this->decode($this->send('GET', '/2/media/upload', [
                 'media_id' => $mediaId,
-            ]);
+                'command'  => 'STATUS',
+            ], $this->headers()));
 
-            $nextProcessing = $status['processing_info'] ?? null;
+            $statusData     = $status['data'] ?? null;
+            $nextProcessing = is_array($statusData) ? ($statusData['processing_info'] ?? null) : null;
+
+            if (! is_array($nextProcessing))
+            {
+                $nextProcessing = $status['processing_info'] ?? null;
+            }
 
             if (! is_array($nextProcessing))
             {
@@ -361,44 +384,6 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
             $this->provider(),
             sprintf('X media processing timed out for media id [%s].', $mediaId),
         );
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     * @return array<string, mixed>
-     */
-    private function uploadCommand(string $command, array $payload): array
-    {
-        $response = $this->uploadRequest()
-            ->asForm()
-            ->post('/1.1/media/upload.json', array_merge(
-                [
-                    'command' => $command,
-                ],
-                $payload,
-            ))
-        ;
-
-        if ($response->failed())
-        {
-            throw ApiException::fromResponse($this->provider(), $response);
-        }
-
-        return $this->decode($response);
-    }
-
-    private function uploadRequest(): PendingRequest
-    {
-        return Http::withHeaders($this->headers())
-            ->baseUrl('https://upload.twitter.com')
-            ->timeout($this->intConfig('timeout', 15))
-            ->connectTimeout($this->intConfig('connect_timeout', 10))
-            ->retry(
-                $this->intConfig('retries', 1),
-                $this->intConfig('retry_sleep_ms', 150),
-                throw: false,
-            )
-        ;
     }
 
     private function resolveMimeType(?string $detectedMime, string $mediaType, string $fileName): string
@@ -434,5 +419,15 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
             'webm'  => 'video/webm',
             default => 'video/mp4',
         };
+    }
+
+    private function resolveMediaCategory(string $mediaType, string $mimeType): string
+    {
+        if ($mediaType === 'video')
+        {
+            return 'tweet_video';
+        }
+
+        return $mimeType === 'image/gif' ? 'tweet_gif' : 'tweet_image';
     }
 }

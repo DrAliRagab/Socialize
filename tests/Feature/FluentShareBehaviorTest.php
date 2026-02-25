@@ -114,11 +114,11 @@ it('accepts metadata chaining and ignores blank nullable shared values', functio
 
 it('deduplicates fluent media sources and ignores invalid pre-seeded media source entries', function (): void {
     Http::fake([
-        'https://cdn.example.com/dedupe.jpg'               => Http::response('image-binary', 200, ['Content-Type' => 'image/jpeg']),
-        'https://upload.twitter.com/1.1/media/upload.json' => Http::sequence()
-            ->push(['media_id_string' => 'dedupe-media'], 200)
+        'https://cdn.example.com/dedupe.jpg' => Http::response('image-binary', 200, ['Content-Type' => 'image/jpeg']),
+        'https://api.x.com/2/media/upload*'  => Http::sequence()
+            ->push(['data' => ['id' => 'dedupe-media']], 200)
             ->push('', 204)
-            ->push(['media_id_string' => 'dedupe-media'], 200),
+            ->push(['data' => ['id' => 'dedupe-media']], 200),
         'https://api.x.com/2/tweets' => Http::response(['data' => ['id' => 'dedupe-post']], 200),
     ]);
 
@@ -136,11 +136,11 @@ it('deduplicates fluent media sources and ignores invalid pre-seeded media sourc
 
 it('ignores non-array seeded media_sources entries while deduplicating fluent media entries', function (): void {
     Http::fake([
-        'https://cdn.example.com/non-array-seeded.jpg'     => Http::response('image-binary', 200, ['Content-Type' => 'image/jpeg']),
-        'https://upload.twitter.com/1.1/media/upload.json' => Http::sequence()
-            ->push(['media_id_string' => 'media-non-array-seeded'], 200)
+        'https://cdn.example.com/non-array-seeded.jpg' => Http::response('image-binary', 200, ['Content-Type' => 'image/jpeg']),
+        'https://api.x.com/2/media/upload*'            => Http::sequence()
+            ->push(['data' => ['id' => 'media-non-array-seeded']], 200)
             ->push('', 204)
-            ->push(['media_id_string' => 'media-non-array-seeded'], 200),
+            ->push(['data' => ['id' => 'media-non-array-seeded']], 200),
         'https://api.x.com/2/tweets' => Http::response(['data' => ['id' => 'post-non-array-seeded']], 200),
     ]);
 
