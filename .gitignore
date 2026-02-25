@@ -7,4 +7,5 @@
 /rector.cache
 /.idea
 /.vscode
+/.testing.env
 composer.lock

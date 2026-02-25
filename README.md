@@ -48,11 +48,20 @@ foreach (['facebook', 'twitter', 'linkedin'] as $provider) {
 }
 ```
 
+Use the same fluent media call across providers:
+
+```php
+Socialize::provider('facebook')->media('/absolute/path/banner.jpg', 'image')->share();
+Socialize::provider('twitter')->media('/absolute/path/clip.mp4', 'video')->share();
+Socialize::provider('linkedin')->media('https://picsum.photos/1200/800', 'image')->share();
+```
+
 ## Shared Fluent Methods
 - `message(?string $message)`
 - `link(?string $url, ?string $articleTitle = null)` (`$articleTitle` is used for LinkedIn link posts)
 - `imageUrl(?string $url)`
 - `videoUrl(?string $url)`
+- `media(string $source, ?string $mediaType = null)` (`$source` can be URL or local file path)
 - `mediaId(string $id)`
 - `mediaIds(array $ids)`
 - `metadata(array $metadata)`
@@ -129,6 +138,9 @@ General:
 - `SOCIALIZE_HTTP_CONNECT_TIMEOUT` (optional, default: `30`)
 - `SOCIALIZE_HTTP_RETRIES` (optional)
 - `SOCIALIZE_HTTP_RETRY_SLEEP_MS` (optional)
+- `SOCIALIZE_TEMP_MEDIA_DISK` (optional, default: `public`)
+- `SOCIALIZE_TEMP_MEDIA_DIRECTORY` (optional, default: `socialize-temp`)
+- `SOCIALIZE_TEMP_MEDIA_VISIBILITY` (optional, default: `public`)
 
 Facebook:
 - `SOCIALIZE_FACEBOOK_PAGE_ID` (required)
@@ -145,6 +157,8 @@ Instagram:
 X (Twitter):
 - `SOCIALIZE_TWITTER_BEARER_TOKEN` (required)
 - `SOCIALIZE_TWITTER_BASE_URL` (optional)
+  - Must be an OAuth 2.0 **User Context** token (app-only bearer tokens are rejected by X for post/media endpoints).
+  - Required OAuth scopes for full Socialize X support: `tweet.read tweet.write users.read media.write` (plus `offline.access` if you need refresh tokens).
 
 LinkedIn:
 - `SOCIALIZE_LINKEDIN_AUTHOR` (required)
@@ -156,7 +170,9 @@ LinkedIn:
 - Facebook/Instagram use Graph API versioning from config.
 - Instagram content publishing is multi-step (container then publish).
 - Instagram publish failure troubleshooting uses `GET /{container-id}?fields=status_code,status`.
-- X media uploads should be done before publish; pass media IDs to `mediaId/mediaIds`.
+- Facebook/Instagram accept URL media. When you pass a local file path via `media(...)`, Socialize creates a temporary public URL, uses it for the request, then deletes the temporary file after success/failure.
+- X and LinkedIn auto-upload media from `media(...)`, `imageUrl(...)`, and `videoUrl(...)` sources and resolve the required media IDs / URNs internally.
+- X image uploads use `POST /2/media/upload` (base64 payload), while X video uploads use v2 chunked commands on `/2/media/upload` (`INIT`, `APPEND`, `FINALIZE`, `STATUS`).
 - LinkedIn requires `Linkedin-Version` and `X-Restli-Protocol-Version` headers.
 
 ## Testing
