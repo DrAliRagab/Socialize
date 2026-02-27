@@ -12,6 +12,7 @@ use DrAliRagab\Socialize\Enums\Provider;
 use DrAliRagab\Socialize\Exceptions\ApiException;
 use DrAliRagab\Socialize\Exceptions\InvalidConfigException;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
+use DrAliRagab\Socialize\ValueObjects\CommentResult;
 use DrAliRagab\Socialize\ValueObjects\SharePayload;
 use DrAliRagab\Socialize\ValueObjects\ShareResult;
 
@@ -155,6 +156,54 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
         $body = $this->decode($response);
 
         return (bool)($body['success'] ?? false);
+    }
+
+    public function comment(string $postId, string $message): CommentResult
+    {
+        $this->requireCredentials('author', 'access_token');
+
+        $postId  = mb_trim($postId);
+        $message = mb_trim($message);
+
+        if ($postId === '')
+        {
+            throw new InvalidSharePayloadException('LinkedIn comment post id cannot be empty.');
+        }
+
+        if ($message === '')
+        {
+            throw new InvalidSharePayloadException('LinkedIn comment message cannot be empty.');
+        }
+
+        $response = $this->send(
+            'POST',
+            sprintf('/v2/socialActions/%s/comments', rawurlencode($postId)),
+            [
+                'actor'   => $this->authorUrn(),
+                'message' => [
+                    'text' => $message,
+                ],
+            ],
+            [
+                'Authorization' => 'Bearer ' . $this->credential('access_token'),
+            ],
+        );
+
+        $body = $this->decode($response);
+        $id   = $body['id'] ?? $response->header('x-restli-id');
+
+        if (! is_string($id) || $id === '')
+        {
+            throw ApiException::invalidResponse($this->provider(), 'LinkedIn API did not return a comment id.');
+        }
+
+        return new CommentResult(
+            provider: $this->provider(),
+            id: $id,
+            postId: $postId,
+            url: null,
+            raw: $body,
+        );
     }
 
     protected function providerName(): string

@@ -119,6 +119,35 @@ it('rejects empty provider-specific identifiers', function (): void {
     ;
 });
 
+it('rejects empty comment identifiers and comment body', function (): void {
+    expect(fn (): mixed => Socialize::facebook()->commentOn('   ', 'hello'))
+        ->toThrow(InvalidSharePayloadException::class, 'commentOn post id cannot be empty')
+    ;
+
+    expect(fn (): mixed => Socialize::facebook()->commentOn('123', '   '))
+        ->toThrow(InvalidSharePayloadException::class, 'commentOn message cannot be empty')
+    ;
+});
+
+it('shares then comments in one fluent chain', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/12345/feed'             => Http::response(['id' => 'fb-post-chain'], 200),
+        'https://graph.facebook.com/v25.0/fb-post-chain/comments' => Http::response(['id' => 'fb-comment-chain'], 200),
+    ]);
+
+    $commentResult = Socialize::facebook()
+        ->message('Chained post')
+        ->shareAndComment('First comment')
+    ;
+
+    expect($commentResult->id())->toBe('fb-comment-chain')
+        ->and($commentResult->postId())->toBe('fb-post-chain')
+    ;
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/fb-post-chain/comments'
+        && ($request->data()['message'] ?? null)                    === 'First comment');
+});
+
 it('rejects empty link article title when provided', function (): void {
     Socialize::linkedin()->link('https://example.com/article', '   ');
 })->throws(InvalidSharePayloadException::class, 'link article title cannot be empty when provided');

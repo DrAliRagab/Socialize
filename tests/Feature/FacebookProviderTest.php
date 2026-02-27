@@ -53,6 +53,30 @@ it('parses facebook scheduled_at string option in provider payload', function ()
         && \array_key_exists('scheduled_publish_time', $request->data()));
 });
 
+it('creates a facebook comment on an existing post', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/*' => Http::response(['id' => 'fb-comment-1'], 200),
+    ]);
+
+    $commentResult = Socialize::facebook()->commentOn('fb-post-1', 'Nice update!');
+
+    expect($commentResult->id())->toBe('fb-comment-1')
+        ->and($commentResult->postId())->toBe('fb-post-1')
+        ->and($commentResult->provider()->value)->toBe('facebook')
+    ;
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/fb-post-1/comments'
+        && ($request->data()['message'] ?? null)                    === 'Nice update!');
+});
+
+it('throws when facebook comment response is missing id', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/*' => Http::response([], 200),
+    ]);
+
+    Socialize::facebook()->commentOn('fb-post-1', 'Nice update!');
+})->throws(ApiException::class, 'Facebook API did not return a comment id');
+
 it('shares a facebook photo post', function (): void {
     Http::fake([
         'https://graph.facebook.com/*' => Http::response(['post_id' => 'fb-photo'], 200),

@@ -29,6 +29,30 @@ it('shares instagram image content', function (): void {
     ;
 });
 
+it('creates an instagram comment on an existing post', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/*' => Http::response(['id' => 'ig-comment-1'], 200),
+    ]);
+
+    $commentResult = Socialize::instagram()->commentOn('ig-post-1', 'Great post!');
+
+    expect($commentResult->id())->toBe('ig-comment-1')
+        ->and($commentResult->postId())->toBe('ig-post-1')
+        ->and($commentResult->provider()->value)->toBe('instagram')
+    ;
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/ig-post-1/comments'
+        && ($request->data()['message'] ?? null)                    === 'Great post!');
+});
+
+it('throws when instagram comment response is missing id', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/*' => Http::response([], 200),
+    ]);
+
+    Socialize::instagram()->commentOn('ig-post-1', 'Great post!');
+})->throws(ApiException::class, 'Instagram API did not return a comment id');
+
 it('shares instagram reels video', function (): void {
     Http::fake([
         'https://graph.facebook.com/v25.0/98765/media'         => Http::response(['id' => 'container-video'], 200),

@@ -9,6 +9,7 @@ use DrAliRagab\Socialize\Enums\Provider;
 use DrAliRagab\Socialize\Exceptions\ApiException;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\Exceptions\UnsupportedFeatureException;
+use DrAliRagab\Socialize\ValueObjects\CommentResult;
 use DrAliRagab\Socialize\ValueObjects\SharePayload;
 use DrAliRagab\Socialize\ValueObjects\ShareResult;
 
@@ -145,6 +146,45 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
         ));
 
         return (bool)($response['success'] ?? false);
+    }
+
+    public function comment(string $postId, string $message): CommentResult
+    {
+        $this->requireCredentials('access_token');
+
+        $postId  = mb_trim($postId);
+        $message = mb_trim($message);
+
+        if ($postId === '')
+        {
+            throw new InvalidSharePayloadException('Facebook comment post id cannot be empty.');
+        }
+
+        if ($message === '')
+        {
+            throw new InvalidSharePayloadException('Facebook comment message cannot be empty.');
+        }
+
+        $endpoint = sprintf('/%s/%s/comments', $this->graphVersion(), $postId);
+        $response = $this->decode($this->send('POST', $endpoint, [
+            'access_token' => $this->credential('access_token'),
+            'message'      => $message,
+        ]));
+
+        $id = $response['id'] ?? $response['comment_id'] ?? null;
+
+        if (! is_string($id) || $id === '')
+        {
+            throw ApiException::invalidResponse($this->provider(), 'Facebook API did not return a comment id.');
+        }
+
+        return new CommentResult(
+            provider: $this->provider(),
+            id: $id,
+            postId: $postId,
+            url: sprintf('https://www.facebook.com/%s', $id),
+            raw: $response,
+        );
     }
 
     protected function providerName(): string
