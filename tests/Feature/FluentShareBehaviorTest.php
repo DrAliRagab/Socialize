@@ -30,6 +30,18 @@ it('validates poll maximum duration', function (): void {
     Socialize::twitter()->poll(['A', 'B'], 10081);
 })->throws(InvalidSharePayloadException::class, 'between 5 and 10080');
 
+it('validates poll options are not empty after trimming', function (): void {
+    Socialize::twitter()->poll(['A', '   '], 30);
+})->throws(InvalidSharePayloadException::class, 'entries cannot be empty');
+
+it('rejects poll for providers without poll support', function (): void {
+    Socialize::facebook()->poll(['A', 'B'], 30);
+})->throws(UnsupportedFeatureException::class, 'only available for [twitter, linkedin]');
+
+it('validates linkedin poll duration choices', function (): void {
+    Socialize::linkedin()->poll(['A', 'B'], 30);
+})->throws(InvalidSharePayloadException::class, '1440, 4320, 10080, or 20160');
+
 it('supports scheduledAt for facebook and sets publish flags', function (): void {
     Http::fake([
         'https://graph.facebook.com/*' => Http::response(['id' => 'fb-scheduled'], 200),

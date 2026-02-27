@@ -51,6 +51,7 @@ final class FluentShare
             'article_title',
             'distribution',
             'media_urn',
+            'poll',
             'visibility',
         ],
     ];
@@ -306,21 +307,64 @@ final class FluentShare
      */
     public function poll(array $options, int $durationMinutes): self
     {
-        $this->ensureProvider(Provider::Twitter);
+        $this->ensureProvider(Provider::Twitter, Provider::LinkedIn);
 
         if (count($options) < 2 || count($options) > 4)
         {
-            throw new InvalidSharePayloadException('X poll options must contain between 2 and 4 choices.');
+            throw new InvalidSharePayloadException('Poll options must contain between 2 and 4 choices.');
         }
 
-        if ($durationMinutes < 5 || $durationMinutes > 10080)
+        $normalizedOptions = [];
+
+        foreach ($options as $option)
         {
-            throw new InvalidSharePayloadException('X poll duration must be between 5 and 10080 minutes.');
+            $option = mb_trim($option);
+
+            if ($option === '')
+            {
+                throw new InvalidSharePayloadException('Poll option entries cannot be empty.');
+            }
+
+            $normalizedOptions[] = $option;
         }
+
+        if ($this->provider === Provider::Twitter)
+        {
+            if ($durationMinutes < 5 || $durationMinutes > 10080)
+            {
+                throw new InvalidSharePayloadException('X poll duration must be between 5 and 10080 minutes.');
+            }
+
+            return $this->option('poll', [
+                'options'          => $normalizedOptions,
+                'duration_minutes' => $durationMinutes,
+            ]);
+        }
+
+        $duration = match ($durationMinutes)
+        {
+            1440    => 'ONE_DAY',
+            4320    => 'THREE_DAYS',
+            10080   => 'SEVEN_DAYS',
+            20160   => 'FOURTEEN_DAYS',
+            default => null,
+        };
+
+        if ($duration === null)
+        {
+            throw new InvalidSharePayloadException('LinkedIn poll duration must be one of 1440, 4320, 10080, or 20160 minutes.');
+        }
+
+        $linkedInOptions = array_map(
+            static fn (string $option): array => ['text' => $option],
+            $normalizedOptions,
+        );
 
         return $this->option('poll', [
-            'options'          => $options,
-            'duration_minutes' => $durationMinutes,
+            'options'  => $linkedInOptions,
+            'settings' => [
+                'duration' => $duration,
+            ],
         ]);
     }
 

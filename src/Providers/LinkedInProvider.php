@@ -6,6 +6,7 @@ namespace DrAliRagab\Socialize\Providers;
 
 use function array_key_exists;
 use function basename;
+use function count;
 
 use DrAliRagab\Socialize\Contracts\ProviderDriver;
 use DrAliRagab\Socialize\Enums\Provider;
@@ -56,10 +57,19 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
 
         $mediaUrn    = $this->resolveMediaUrn($sharePayload);
         $hasMediaUrn = is_string($mediaUrn) && mb_trim($mediaUrn) !== '';
+        $poll        = $sharePayload->option('poll');
+        $hasPoll     = is_array($poll) && $poll !== [];
 
-        if (! $sharePayload->hasAnyCoreContent() && ! $hasMediaUrn)
+        if (! $sharePayload->hasAnyCoreContent() && ! $hasMediaUrn && ! $hasPoll)
         {
             throw new InvalidSharePayloadException('LinkedIn share requires text/link content or a media URN.');
+        }
+
+        $hasLink = is_string($sharePayload->link()) && mb_trim($sharePayload->link()) !== '';
+
+        if ($hasPoll && ($hasLink || $hasMediaUrn))
+        {
+            throw new InvalidSharePayloadException('LinkedIn poll posts cannot include link or media content.');
         }
 
         $visibility   = $sharePayload->option('visibility', 'PUBLIC');
@@ -92,7 +102,10 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
 
         $content = [];
 
-        if (is_string($sharePayload->link()) && mb_trim($sharePayload->link()) !== '')
+        if ($hasPoll)
+        {
+            $content['poll'] = $this->buildPollContent($sharePayload, $poll);
+        } elseif ($hasLink)
         {
             if (filter_var($sharePayload->link(), FILTER_VALIDATE_URL) === false)
             {
@@ -100,7 +113,7 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
             }
 
             $content['article'] = [
-                'source' => mb_trim($sharePayload->link()),
+                'source' => mb_trim((string)$sharePayload->link()),
                 'title'  => $this->articleTitle($sharePayload),
             ];
         }
@@ -279,6 +292,87 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
         }
 
         return 'Shared link';
+    }
+
+    /**
+     * @param array<mixed, mixed> $poll
+     * @return array{
+     *     question: string,
+     *     options: list<array{text: string}>,
+     *     settings: array{duration: string}
+     * }
+     */
+    private function buildPollContent(SharePayload $sharePayload, array $poll): array
+    {
+        $question = $sharePayload->message();
+
+        if (! is_string($question) || mb_trim($question) === '')
+        {
+            throw new InvalidSharePayloadException('LinkedIn poll requires message() as the poll question.');
+        }
+
+        $question = mb_trim($question);
+
+        if (mb_strlen($question) > 140)
+        {
+            throw new InvalidSharePayloadException('LinkedIn poll question must be 140 characters or fewer.');
+        }
+
+        $options = $poll['options'] ?? null;
+
+        if (! is_array($options) || $options === [])
+        {
+            throw new InvalidSharePayloadException('LinkedIn poll options are required.');
+        }
+
+        if (count($options) < 2 || count($options) > 4)
+        {
+            throw new InvalidSharePayloadException('LinkedIn poll options must contain between 2 and 4 choices.');
+        }
+
+        $normalizedOptions = [];
+
+        foreach ($options as $option)
+        {
+            $text = is_array($option) ? ($option['text'] ?? null) : null;
+
+            if (! is_string($text))
+            {
+                throw new InvalidSharePayloadException('LinkedIn poll option text must be a string.');
+            }
+
+            $text = mb_trim($text);
+
+            if ($text === '')
+            {
+                throw new InvalidSharePayloadException('LinkedIn poll option text cannot be empty.');
+            }
+
+            if (mb_strlen($text) > 30)
+            {
+                throw new InvalidSharePayloadException('LinkedIn poll option text must be 30 characters or fewer.');
+            }
+
+            $normalizedOptions[] = [
+                'text' => $text,
+            ];
+        }
+
+        $settings = $poll['settings'] ?? null;
+        $duration = is_array($settings) ? ($settings['duration'] ?? null) : null;
+
+        if (! is_string($duration) || mb_trim($duration) === '')
+        {
+            throw new InvalidSharePayloadException('LinkedIn poll duration setting is required.');
+        }
+
+        return [
+            'question' => $question,
+            'options'  => $normalizedOptions,
+            'settings' => [
+                'duration' => mb_trim($duration),
+            ],
+        ];
     }
 
     private function authorUrn(): string
