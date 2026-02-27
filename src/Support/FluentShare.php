@@ -11,6 +11,7 @@ use DrAliRagab\Socialize\Contracts\ProviderDriver;
 use DrAliRagab\Socialize\Enums\Provider;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\Exceptions\UnsupportedFeatureException;
+use DrAliRagab\Socialize\ValueObjects\CommentResult;
 use DrAliRagab\Socialize\ValueObjects\SharePayload;
 use DrAliRagab\Socialize\ValueObjects\ShareResult;
 use Illuminate\Support\Carbon;
@@ -380,6 +381,32 @@ final class FluentShare
             metadata: $this->metadata,
             mediaSources: $providerOptions['media_sources'],
         ));
+    }
+
+    public function commentOn(string $postId, string $message): CommentResult
+    {
+        $postId = mb_trim($postId);
+
+        if ($postId === '')
+        {
+            throw new InvalidSharePayloadException('commentOn post id cannot be empty.');
+        }
+
+        $message = mb_trim($message);
+
+        if ($message === '')
+        {
+            throw new InvalidSharePayloadException('commentOn message cannot be empty.');
+        }
+
+        return $this->providerDriver->comment($postId, $message);
+    }
+
+    public function shareAndComment(string $message): CommentResult
+    {
+        $shareResult = $this->share();
+
+        return $this->commentOn($shareResult->id(), $message);
     }
 
     public function delete(string $postId): bool

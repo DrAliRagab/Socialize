@@ -48,6 +48,30 @@ it('uses explicit link article title when provided via link second parameter', f
     Http::assertSent(fn (Request $request): bool => ($request->data()['content']['article']['title'] ?? null) === 'Custom LinkedIn Title');
 });
 
+it('creates a linkedin comment on an existing post', function (): void {
+    Http::fake([
+        'https://api.linkedin.com/v2/socialActions/*/comments' => Http::response(['id' => 'urn:li:comment:1'], 201),
+    ]);
+
+    $commentResult = Socialize::linkedin()->commentOn('urn:li:share:1', 'Looks good!');
+
+    expect($commentResult->id())->toBe('urn:li:comment:1')
+        ->and($commentResult->postId())->toBe('urn:li:share:1')
+        ->and($commentResult->provider()->value)->toBe('linkedin')
+    ;
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.linkedin.com/v2/socialActions/urn%3Ali%3Ashare%3A1/comments'
+        && ($request->data()['message']['text'] ?? null)            === 'Looks good!');
+});
+
+it('throws when linkedin comment response is missing id', function (): void {
+    Http::fake([
+        'https://api.linkedin.com/v2/socialActions/*/comments' => Http::response([], 201),
+    ]);
+
+    Socialize::linkedin()->commentOn('urn:li:share:1', 'Looks good!');
+})->throws(ApiException::class, 'LinkedIn API did not return a comment id');
+
 it('shares linkedin post with media urn only', function (): void {
     Http::fake([
         'https://api.linkedin.com/rest/posts' => Http::response([], 201, ['x-restli-id' => 'urn:li:share:2']),

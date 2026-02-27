@@ -7,6 +7,7 @@ use DrAliRagab\Socialize\Enums\Provider;
 use DrAliRagab\Socialize\Exceptions\InvalidConfigException;
 use DrAliRagab\Socialize\SocializeManager;
 use DrAliRagab\Socialize\Support\FluentShare;
+use DrAliRagab\Socialize\ValueObjects\CommentResult;
 use DrAliRagab\Socialize\ValueObjects\SharePayload;
 use DrAliRagab\Socialize\ValueObjects\ShareResult;
 use Illuminate\Http\Client\Request;
@@ -120,6 +121,11 @@ final class InvalidFacebookConstructorDriver implements ProviderDriver
         return new ShareResult(Provider::Facebook, 'invalid', null);
     }
 
+    public function comment(string $postId, string $message): CommentResult
+    {
+        return new CommentResult(Provider::Facebook, 'comment-invalid', $postId, null);
+    }
+
     public function delete(string $postId): bool
     {
         return false;
@@ -141,6 +147,11 @@ final readonly class ThrowingFacebookDriver implements ProviderDriver
     public function share(SharePayload $sharePayload): ShareResult
     {
         return new ShareResult(Provider::Facebook, 'throwing', null);
+    }
+
+    public function comment(string $postId, string $message): CommentResult
+    {
+        return new CommentResult(Provider::Facebook, 'comment-throwing', $postId, null);
     }
 
     public function delete(string $postId): bool

@@ -11,6 +11,7 @@ use DrAliRagab\Socialize\Contracts\ProviderDriver;
 use DrAliRagab\Socialize\Enums\Provider;
 use DrAliRagab\Socialize\Exceptions\ApiException;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
+use DrAliRagab\Socialize\ValueObjects\CommentResult;
 use DrAliRagab\Socialize\ValueObjects\SharePayload;
 use DrAliRagab\Socialize\ValueObjects\ShareResult;
 
@@ -125,6 +126,47 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
         $data     = $response['data'] ?? null;
 
         return (bool)(is_array($data) ? ($data['deleted'] ?? false) : false);
+    }
+
+    public function comment(string $postId, string $message): CommentResult
+    {
+        $this->requireCredentials('bearer_token');
+
+        $postId  = mb_trim($postId);
+        $message = mb_trim($message);
+
+        if ($postId === '')
+        {
+            throw new InvalidSharePayloadException('X comment post id cannot be empty.');
+        }
+
+        if ($message === '')
+        {
+            throw new InvalidSharePayloadException('X comment message cannot be empty.');
+        }
+
+        $response = $this->decode($this->send('POST', '/2/tweets', [
+            'text'  => $message,
+            'reply' => [
+                'in_reply_to_tweet_id' => $postId,
+            ],
+        ], $this->headers()));
+
+        $data = $response['data'] ?? null;
+        $id   = is_array($data) ? ($data['id'] ?? null) : null;
+
+        if (! is_string($id) || $id === '')
+        {
+            throw ApiException::invalidResponse($this->provider(), 'X API did not return a comment id.');
+        }
+
+        return new CommentResult(
+            provider: $this->provider(),
+            id: $id,
+            postId: $postId,
+            url: sprintf('https://x.com/i/web/status/%s', $id),
+            raw: $response,
+        );
     }
 
     protected function providerName(): string

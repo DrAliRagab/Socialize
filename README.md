@@ -51,6 +51,22 @@ $id = $result->id();
 $url = $result->url();
 ```
 
+Comment on an existing post (all providers):
+
+```php
+$comment = Socialize::provider('facebook')
+    ->commentOn($id, 'Thanks everyone!');
+```
+
+Share then immediately add a comment:
+
+```php
+$comment = Socialize::provider('linkedin')
+    ->message('New release is live')
+    ->link('https://example.com/release')
+    ->shareAndComment('Happy to answer questions below.');
+```
+
 Switch provider with the same shared methods:
 
 ```php
@@ -76,6 +92,8 @@ foreach (['facebook', 'instagram', 'twitter', 'linkedin'] as $provider) {
 - `metadata(array $metadata)`
 - `option(string $key, mixed $value)`
 - `share(): ShareResult`
+- `commentOn(string $postId, string $message): CommentResult`
+- `shareAndComment(string $message): CommentResult`
 - `delete(string $postId): bool`
 
 ### Provider-specific methods
@@ -246,6 +264,8 @@ Examples:
 
 ```bash
 php bin/local-tester.php share --provider=facebook --message="Hello" --link="https://example.com"
+php bin/local-tester.php comment --provider=facebook --post-id="123_456" --comment="Nice post!"
+php bin/local-tester.php share-and-comment --provider=linkedin --message="Launch" --link="https://example.com" --comment="Any feedback?"
 php bin/local-tester.php share --provider=instagram --video-url="https://cdn.example.com/reel.mp4" --reel
 php bin/local-tester.php share --provider=twitter --message="Launch day" --media-source="/absolute/path/image.jpg" --media-type=image
 php bin/local-tester.php share --provider=linkedin --message="Professional update" --link="https://example.com" --link-title="Read more"

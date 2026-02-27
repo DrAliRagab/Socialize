@@ -61,6 +61,34 @@ it('shares a media x post with explicit media ids reply quote and poll', functio
     });
 });
 
+it('creates an x comment by replying to an existing post id', function (): void {
+    Http::fake([
+        'https://api.x.com/2/tweets' => Http::response([
+            'data' => [
+                'id' => 'x-comment-1',
+            ],
+        ], 200),
+    ]);
+
+    $commentResult = Socialize::twitter()->commentOn('44', 'Reply body');
+
+    expect($commentResult->id())->toBe('x-comment-1')
+        ->and($commentResult->postId())->toBe('44')
+        ->and($commentResult->provider()->value)->toBe('twitter')
+    ;
+
+    Http::assertSent(fn (Request $request): bool => ($request->data()['text'] ?? null) === 'Reply body'
+        && ($request->data()['reply']['in_reply_to_tweet_id'] ?? null)                 === '44');
+});
+
+it('throws when x comment response is missing id', function (): void {
+    Http::fake([
+        'https://api.x.com/2/tweets' => Http::response(['data' => []], 200),
+    ]);
+
+    Socialize::twitter()->commentOn('44', 'Reply body');
+})->throws(ApiException::class, 'X API did not return a comment id');
+
 it('uploads image url to x media API automatically then shares', function (): void {
     Http::fake([
         'https://cdn.example.com/image.jpg' => Http::response('image-binary', 200, ['Content-Type' => 'image/jpeg']),

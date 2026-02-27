@@ -97,7 +97,42 @@ function main(array $argv): void
             return;
         }
 
-        throw new InvalidArgumentException(\sprintf('Unknown command [%s]. Use share, delete, or --help.', $command));
+        if ($command === 'comment')
+        {
+            $postId        = optionString($options, 'post-id');
+            $commentBody   = optionString($options, 'comment');
+            $commentResult = $fluent->commentOn($postId, $commentBody);
+
+            output([
+                'ok'       => true,
+                'action'   => 'comment',
+                'provider' => $provider,
+                'profile'  => $profile ?? 'default',
+                'result'   => $commentResult->toArray(),
+            ]);
+
+            return;
+        }
+
+        if ($command === 'share-and-comment')
+        {
+            $fluent        = applySharedOptions($fluent, $options);
+            $fluent        = applyProviderSpecificOptions($fluent, $provider, $options);
+            $commentBody   = optionString($options, 'comment');
+            $commentResult = $fluent->shareAndComment($commentBody);
+
+            output([
+                'ok'       => true,
+                'action'   => 'share-and-comment',
+                'provider' => $provider,
+                'profile'  => $profile ?? 'default',
+                'result'   => $commentResult->toArray(),
+            ]);
+
+            return;
+        }
+
+        throw new InvalidArgumentException(\sprintf('Unknown command [%s]. Use share, comment, share-and-comment, delete, or --help.', $command));
     } catch (Throwable $throwable)
     {
         $payload = [
@@ -168,6 +203,8 @@ Socialize Local Tester
 
 Usage:
   php bin/local-tester.php share  --provider=facebook [options]
+  php bin/local-tester.php comment --provider=facebook --post-id=POST_ID --comment="Text" [options]
+  php bin/local-tester.php share-and-comment --provider=facebook --comment="Text" [share options]
   php bin/local-tester.php delete --provider=facebook --post-id=POST_ID [options]
   php bin/local-tester.php --provider=facebook [share options]  # shorthand for share
 
@@ -190,6 +227,7 @@ Shared share options:
   --option-json='{"custom_key":"custom_value"}'
   --option-key="custom_key" --option-value="custom_value"
   --option-key="custom_key" --option-value-json='{"nested":true}'
+  --comment="Text for comment command or share-and-comment command"
 
 Facebook options:
   --published=true|false
@@ -214,6 +252,8 @@ LinkedIn options:
 
 Examples:
   php bin/local-tester.php share --provider=facebook --message="Hello" --link="https://example.com"
+  php bin/local-tester.php comment --provider=facebook --post-id="123_456" --comment="Nice post!"
+  php bin/local-tester.php share-and-comment --provider=linkedin --message="Launch" --link="https://example.com" --comment="Any feedback?"
   php bin/local-tester.php share --provider=instagram --video-url="https://cdn.example.com/reel.mp4" --reel
   php bin/local-tester.php delete --provider=linkedin --post-id="urn:li:share:123"
 TXT;
