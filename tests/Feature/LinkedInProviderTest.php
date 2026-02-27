@@ -6,6 +6,7 @@ use DrAliRagab\Socialize\Exceptions\ApiException;
 use DrAliRagab\Socialize\Exceptions\InvalidConfigException;
 use DrAliRagab\Socialize\Exceptions\InvalidSharePayloadException;
 use DrAliRagab\Socialize\Facades\Socialize;
+use DrAliRagab\Socialize\Providers\LinkedInProvider;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -47,6 +48,192 @@ it('uses explicit link article title when provided via link second parameter', f
 
     Http::assertSent(fn (Request $request): bool => ($request->data()['content']['article']['title'] ?? null) === 'Custom LinkedIn Title');
 });
+
+it('shares a linkedin poll post and maps duration to linkedin poll settings', function (): void {
+    Http::fake([
+        'https://api.linkedin.com/rest/posts' => Http::response(['id' => 'urn:li:share:poll-1'], 201),
+    ]);
+
+    $shareResult = Socialize::linkedin()
+        ->message('What should we build next?')
+        ->poll(['Feature A', 'Feature B'], 4320)
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('urn:li:share:poll-1');
+
+    Http::assertSent(function (Request $request): bool {
+        $data = $request->data();
+
+        return $request->url()                                            === 'https://api.linkedin.com/rest/posts'
+            && ($data['content']['poll']['question'] ?? null)             === 'What should we build next?'
+            && ($data['content']['poll']['settings']['duration'] ?? null) === 'THREE_DAYS'
+            && ($data['content']['poll']['options'][0]['text'] ?? null)   === 'Feature A'
+            && ($data['content']['poll']['options'][1]['text'] ?? null)   === 'Feature B'
+            && ! isset($data['content']['article'])
+            && ! isset($data['content']['media']);
+    });
+});
+
+it('rejects linkedin poll posts when message question is missing', function (): void {
+    Socialize::linkedin()
+        ->poll(['A', 'B'], 1440)
+        ->share()
+    ;
+})->throws(InvalidSharePayloadException::class, 'message() as the poll question');
+
+it('rejects linkedin poll posts when question exceeds max length', function (): void {
+    Socialize::linkedin()
+        ->message(str_repeat('q', 141))
+        ->poll(['A', 'B'], 1440)
+        ->share()
+    ;
+})->throws(InvalidSharePayloadException::class, '140 characters or fewer');
+
+it('rejects linkedin poll posts when link or media content is present', function (): void {
+    Socialize::linkedin()
+        ->message('Choose one')
+        ->link('https://example.com')
+        ->poll(['A', 'B'], 1440)
+        ->share()
+    ;
+})->throws(InvalidSharePayloadException::class, 'cannot include link or media content');
+
+it('maps linkedin poll durations of seven and fourteen days', function (): void {
+    Http::fake([
+        'https://api.linkedin.com/rest/posts' => Http::sequence()
+            ->push(['id' => 'urn:li:share:poll-7'], 201)
+            ->push(['id' => 'urn:li:share:poll-14'], 201),
+    ]);
+
+    Socialize::linkedin()
+        ->message('Seven-day poll?')
+        ->poll(['Yes', 'No'], 10080)
+        ->share()
+    ;
+
+    Socialize::linkedin()
+        ->message('Fourteen-day poll?')
+        ->poll(['Yes', 'No'], 20160)
+        ->share()
+    ;
+
+    Http::assertSent(fn (Request $request): bool => $request->url()              === 'https://api.linkedin.com/rest/posts'
+        && ($request->data()['content']['poll']['settings']['duration'] ?? null) === 'SEVEN_DAYS');
+
+    Http::assertSent(fn (Request $request): bool => $request->url()              === 'https://api.linkedin.com/rest/posts'
+        && ($request->data()['content']['poll']['settings']['duration'] ?? null) === 'FOURTEEN_DAYS');
+});
+
+it('validates linkedin provider comment inputs when calling the driver directly', function (): void {
+    /** @var array<string, mixed> $providerConfig */
+    $providerConfig = config('socialize.providers.linkedin');
+
+    /** @var array<string, mixed> $credentials */
+    $credentials = config('socialize.providers.linkedin.profiles.default');
+
+    /** @var array<string, mixed> $httpConfig */
+    $httpConfig = config('socialize.http');
+
+    $provider = new LinkedInProvider($providerConfig, $credentials, $httpConfig, 'default');
+
+    expect(fn (): mixed => $provider->comment('   ', 'hello'))
+        ->toThrow(InvalidSharePayloadException::class, 'comment post id cannot be empty')
+    ;
+
+    expect(fn (): mixed => $provider->comment('urn:li:share:1', '   '))
+        ->toThrow(InvalidSharePayloadException::class, 'comment message cannot be empty')
+    ;
+});
+
+it('rejects linkedin poll payloads missing options when using manual poll option payload', function (): void {
+    Socialize::linkedin()
+        ->message('Pick one')
+        ->option('poll', [
+            'settings' => [
+                'duration' => 'ONE_DAY',
+            ],
+        ])
+        ->share()
+    ;
+})->throws(InvalidSharePayloadException::class, 'poll options are required');
+
+it('rejects linkedin poll payloads with invalid option count when using manual poll option payload', function (): void {
+    Socialize::linkedin()
+        ->message('Pick one')
+        ->option('poll', [
+            'options' => [
+                ['text' => 'Only one'],
+            ],
+            'settings' => [
+                'duration' => 'ONE_DAY',
+            ],
+        ])
+        ->share()
+    ;
+})->throws(InvalidSharePayloadException::class, 'between 2 and 4 choices');
+
+it('rejects linkedin poll payloads with non-string option text when using manual poll option payload', function (): void {
+    Socialize::linkedin()
+        ->message('Pick one')
+        ->option('poll', [
+            'options' => [
+                ['text' => 123],
+                ['text' => 'Second'],
+            ],
+            'settings' => [
+                'duration' => 'ONE_DAY',
+            ],
+        ])
+        ->share()
+    ;
+})->throws(InvalidSharePayloadException::class, 'option text must be a string');
+
+it('rejects linkedin poll payloads with empty option text when using manual poll option payload', function (): void {
+    Socialize::linkedin()
+        ->message('Pick one')
+        ->option('poll', [
+            'options' => [
+                ['text' => '   '],
+                ['text' => 'Second'],
+            ],
+            'settings' => [
+                'duration' => 'ONE_DAY',
+            ],
+        ])
+        ->share()
+    ;
+})->throws(InvalidSharePayloadException::class, 'option text cannot be empty');
+
+it('rejects linkedin poll payloads with too-long option text when using manual poll option payload', function (): void {
+    Socialize::linkedin()
+        ->message('Pick one')
+        ->option('poll', [
+            'options' => [
+                ['text' => str_repeat('a', 31)],
+                ['text' => 'Second'],
+            ],
+            'settings' => [
+                'duration' => 'ONE_DAY',
+            ],
+        ])
+        ->share()
+    ;
+})->throws(InvalidSharePayloadException::class, 'option text must be 30 characters or fewer');
+
+it('rejects linkedin poll payloads missing duration setting when using manual poll option payload', function (): void {
+    Socialize::linkedin()
+        ->message('Pick one')
+        ->option('poll', [
+            'options' => [
+                ['text' => 'First'],
+                ['text' => 'Second'],
+            ],
+            'settings' => [],
+        ])
+        ->share()
+    ;
+})->throws(InvalidSharePayloadException::class, 'duration setting is required');
 
 it('creates a linkedin comment on an existing post', function (): void {
     Http::fake([

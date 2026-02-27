@@ -121,6 +121,13 @@ LinkedIn:
 - `visibility(string $visibility)`
 - `distribution(string $distribution)`
 - `mediaUrn(string $mediaUrn)`
+- `poll(array $options, int $durationMinutes)`
+
+Poll notes:
+
+- `poll()` is supported for `twitter` and `linkedin`.
+- For LinkedIn, `message()` is used as the poll question (max 140 chars).
+- LinkedIn accepts only these poll durations (minutes): `1440`, `4320`, `10080`, `20160`.
 
 ## Media Handling (URL + Local File)
 
