@@ -7,10 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## Unreleased
 
+## 3.1.0 - 2026-05-23
+
 ### Changed
 
 - Improved README for GitHub with clearer onboarding, provider matrix, fluent API examples, and environment setup guidance.
-- Clarified local tester usage and quality command workflow (`composer check`, coverage, analysis, formatting, Rector).
+- Clarified local tester usage and quality command workflow (`composer verify`, coverage, analysis, formatting, Rector).
 
 ## 2.0.0 - 2026-02-24
 

@@ -19,11 +19,11 @@ enum Provider: string
 
         return match ($normalized)
         {
-            'facebook', 'fb' => self::Facebook,
+            'facebook', 'fb'  => self::Facebook,
             'instagram', 'ig' => self::Instagram,
-            'twitter', 'x' => self::Twitter,
-            'linkedin', 'li' => self::LinkedIn,
-            default => throw InvalidProviderException::unsupported($provider),
+            'twitter', 'x'    => self::Twitter,
+            'linkedin', 'li'  => self::LinkedIn,
+            default           => throw InvalidProviderException::unsupported($provider),
         };
     }
 }

@@ -60,7 +60,7 @@
         "test-coverage": "vendor/bin/pest --coverage --min=99",
         "format": "vendor/bin/pint",
         "rector": "vendor/bin/rector process --config rector.php --ansi",
-        "check": [
+        "verify": [
             "@rector",
             "@format",
             "@analyse",
