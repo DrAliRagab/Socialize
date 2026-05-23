@@ -286,8 +286,8 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
         return match ($configured)
         {
             'REELS', 'STORIES' => $configured,
-            'VIDEO' => 'REELS',
-            default => throw new InvalidSharePayloadException('Instagram media_type must be one of VIDEO, REELS, STORIES.'),
+            'VIDEO'            => 'REELS',
+            default            => throw new InvalidSharePayloadException('Instagram media_type must be one of VIDEO, REELS, STORIES.'),
         };
     }
 

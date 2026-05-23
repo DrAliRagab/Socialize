@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Rector\CodingStyle\Rector\PostInc\PostIncDecToPreIncDecRector;
 use Rector\Config\RectorConfig;
 use Rector\Set\ValueObject\LevelSetList;
 use Rector\Set\ValueObject\SetList;
@@ -31,4 +32,7 @@ return RectorConfig::configure()
         importShortClasses: false,
         removeUnusedImports: true,
     )
+    ->withSkip([
+        PostIncDecToPreIncDecRector::class,
+    ])
 ;

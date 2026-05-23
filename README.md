@@ -287,7 +287,7 @@ composer test
 composer test-coverage
 composer format
 composer rector
-composer check
+composer verify
 ```
 
 ## License
