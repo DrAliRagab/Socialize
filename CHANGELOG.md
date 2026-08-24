@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## Unreleased
 
+## 3.3.0 - 2026-08-25
+
+### Changed
+
+- Upload local Facebook Reels and Instagram video media directly through Meta's resumable binary upload workflows instead of temporary public URLs.
+
 ## 3.2.0 - 2026-08-24
 
 ### Added

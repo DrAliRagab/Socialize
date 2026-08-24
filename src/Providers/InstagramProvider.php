@@ -186,6 +186,8 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
         $data = [
             'access_token' => $accessToken,
         ];
+        $localVideoPath     = null;
+        $localVideoFileSize = null;
 
         $caption = $this->buildCaption($sharePayload);
 
@@ -206,8 +208,17 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
             }
         } elseif ($sharePayload->videoUrl() !== null)
         {
-            $data['video_url']  = $sharePayload->videoUrl();
             $data['media_type'] = $this->resolveVideoMediaType($sharePayload);
+
+            if ($this->isValidUrl($sharePayload->videoUrl()))
+            {
+                $data['video_url'] = $sharePayload->videoUrl();
+            } else
+            {
+                $data['upload_type'] = 'resumable';
+                $localVideoPath      = $sharePayload->videoUrl();
+                $localVideoFileSize  = $this->localMediaFileSize($localVideoPath);
+            }
         } else
         {
             throw new InvalidSharePayloadException('Instagram share requires imageUrl or videoUrl when carousel is not used.');
@@ -219,6 +230,11 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
         if (! is_string($creationId) || $creationId === '')
         {
             throw ApiException::invalidResponse($this->provider(), 'Instagram API did not return a container id.');
+        }
+
+        if (is_string($localVideoPath))
+        {
+            $this->uploadLocalVideo($container, $creationId, $localVideoPath, $localVideoFileSize, $accessToken);
         }
 
         return $creationId;
@@ -235,15 +251,24 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
 
         foreach ($carouselItems as $carouselItem)
         {
-            $childPayload = [
+            $localVideoFileSize = null;
+            $childPayload       = [
                 'access_token'     => $accessToken,
                 'is_carousel_item' => true,
             ];
 
             if ($carouselItem['type'] === 'video')
             {
-                $childPayload['video_url']  = $carouselItem['url'];
                 $childPayload['media_type'] = 'VIDEO';
+
+                if ($this->isValidUrl($carouselItem['url']))
+                {
+                    $childPayload['video_url'] = $carouselItem['url'];
+                } else
+                {
+                    $childPayload['upload_type'] = 'resumable';
+                    $localVideoFileSize          = $this->localMediaFileSize($carouselItem['url']);
+                }
             } else
             {
                 $childPayload['image_url'] = $carouselItem['url'];
@@ -256,6 +281,11 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
             if (! is_string($childId) || $childId === '')
             {
                 throw ApiException::invalidResponse($this->provider(), 'Instagram API did not return a child container id for carousel post.');
+            }
+
+            if (is_int($localVideoFileSize))
+            {
+                $this->uploadLocalVideo($child, $childId, $carouselItem['url'], $localVideoFileSize, $accessToken);
             }
 
             $children[] = $childId;
@@ -289,6 +319,38 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
             'VIDEO'            => 'REELS',
             default            => throw new InvalidSharePayloadException('Instagram media_type must be one of VIDEO, REELS, STORIES.'),
         };
+    }
+
+    /**
+     * @param array<string, mixed> $container
+     */
+    private function uploadLocalVideo(
+        array $container,
+        string $creationId,
+        string $videoPath,
+        int $fileSize,
+        string $accessToken,
+    ): void {
+        $uploadUri = $container['uri'] ?? null;
+
+        if (! is_string($uploadUri) || ! $this->isValidUrl($uploadUri))
+        {
+            throw ApiException::invalidResponse($this->provider(), 'Instagram API did not return a resumable upload URI.');
+        }
+
+        $upload = $this->decode($this->sendBinaryFile('POST', $uploadUri, $videoPath, 'application/octet-stream', [
+            'Authorization' => 'OAuth ' . $accessToken,
+            'offset'        => '0',
+            'file_size'     => (string)$fileSize,
+        ]));
+
+        if (($upload['success'] ?? true) === false)
+        {
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                sprintf('Instagram API did not upload local video for container [%s].', $creationId),
+            );
+        }
     }
 
     private function buildCaption(SharePayload $sharePayload): ?string
@@ -623,7 +685,7 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
 
                 $mediaType = $this->inferMediaType($source, $typeHint !== '' ? $typeHint : null);
 
-                if ($this->isValidUrl($source))
+                if ($this->isValidUrl($source) || $mediaType === 'video')
                 {
                     $resolvedCarouselItems[] = [
                         'url'  => $source,
@@ -671,13 +733,6 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
         {
             $temporary          = $this->makeTemporaryPublicUrlForLocalPath($imageUrl, 'Instagram image media');
             $imageUrl           = $temporary['url'];
-            $cleanupCallbacks[] = $temporary['cleanup'];
-        }
-
-        if (is_string($videoUrl) && mb_trim($videoUrl) !== '' && ! $this->isValidUrl($videoUrl))
-        {
-            $temporary          = $this->makeTemporaryPublicUrlForLocalPath($videoUrl, 'Instagram video media');
-            $videoUrl           = $temporary['url'];
             $cleanupCallbacks[] = $temporary['cleanup'];
         }
 

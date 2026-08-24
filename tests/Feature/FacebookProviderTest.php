@@ -169,6 +169,88 @@ it('publishes a facebook reel through the dedicated reels workflow', function ()
         && ($request->data()['description'] ?? null)                === 'Reel caption');
 });
 
+it('uploads a local facebook reel directly without creating a temporary public URL', function (): void {
+    Storage::fake('public');
+
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-fb-reel-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for facebook local reel test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, 'local-reel-bytes');
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/12345/video_reels' => Http::sequence()
+            ->push([
+                'video_id'   => 'fb-local-reel',
+                'upload_url' => 'https://rupload.facebook.com/video-upload/v25.0/fb-local-reel',
+            ], 200)
+            ->push(['success' => true], 200),
+        'https://rupload.facebook.com/*' => Http::response(['success' => true], 200),
+    ]);
+
+    try
+    {
+        $shareResult = Socialize::facebook()
+            ->media($videoPath, 'video')
+            ->reel()
+            ->share()
+        ;
+
+        expect($shareResult->id())->toBe('fb-local-reel');
+    } finally
+    {
+        @unlink($videoPath);
+    }
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://rupload.facebook.com/video-upload/v25.0/fb-local-reel'
+        && $request->hasHeader('Authorization', 'OAuth fb-token')
+        && $request->hasHeader('offset', '0')
+        && $request->hasHeader('file_size', (string)\strlen('local-reel-bytes'))
+        && $request->hasHeader('Content-Type', 'application/octet-stream')
+        && ! $request->hasHeader('file_url'));
+
+    expect(Storage::disk('public')->allFiles('socialize-temp'))->toBe([]);
+});
+
+it('throws when facebook rejects a local reel upload', function (): void {
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-fb-reel-failed-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for facebook failed reel upload test.');
+    }
+
+    file_put_contents($tempFile, 'failed-reel-bytes');
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/12345/video_reels' => Http::response([
+            'video_id'   => 'fb-failed-upload',
+            'upload_url' => 'https://rupload.facebook.com/video-upload/v25.0/fb-failed-upload',
+        ], 200),
+        'https://rupload.facebook.com/*' => Http::response(['success' => false], 200),
+    ]);
+
+    try
+    {
+        expect(fn () => Socialize::facebook()
+            ->media($tempFile, 'video')
+            ->reel()
+            ->share())
+            ->toThrow(ApiException::class, 'Facebook API did not upload the reel video.')
+        ;
+    } finally
+    {
+        @unlink($tempFile);
+    }
+
+    Http::assertNotSent(fn (Request $request): bool => ($request->data()['upload_phase'] ?? null) === 'FINISH');
+});
+
 it('requires a video when publishing a facebook reel', function (): void {
     Http::fake();
 

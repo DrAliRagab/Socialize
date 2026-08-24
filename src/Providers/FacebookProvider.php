@@ -63,7 +63,10 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
                     throw new InvalidSharePayloadException('Facebook reel publishing requires a video.');
                 }
 
-                $this->ensureUrl($resolvedVideoUrl, 'videoUrl');
+                if ($this->isValidUrl($resolvedVideoUrl))
+                {
+                    $this->ensureUrl($resolvedVideoUrl, 'videoUrl');
+                }
 
                 return $this->publishReel($sharePayload, $resolvedVideoUrl, $pageId, $token, $version);
             }
@@ -291,10 +294,26 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
             $uploadUrl = sprintf('https://rupload.facebook.com/video-upload/%s/%s', $version, $videoId);
         }
 
-        $this->send('POST', $uploadUrl, null, [
-            'Authorization' => 'OAuth ' . $token,
-            'file_url'      => $videoUrl,
-        ]);
+        if ($this->isValidUrl($videoUrl))
+        {
+            $upload = $this->decode($this->send('POST', $uploadUrl, null, [
+                'Authorization' => 'OAuth ' . $token,
+                'file_url'      => $videoUrl,
+            ]));
+        } else
+        {
+            $fileSize = $this->localMediaFileSize($videoUrl);
+            $upload   = $this->decode($this->sendBinaryFile('POST', $uploadUrl, $videoUrl, 'application/octet-stream', [
+                'Authorization' => 'OAuth ' . $token,
+                'offset'        => '0',
+                'file_size'     => (string)$fileSize,
+            ]));
+        }
+
+        if (($upload['success'] ?? true) === false)
+        {
+            throw ApiException::invalidResponse($this->provider(), 'Facebook API did not upload the reel video.');
+        }
 
         $finishData = [
             'access_token' => $token,
@@ -388,7 +407,10 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
             $cleanupCallbacks[] = $temporary['cleanup'];
         }
 
-        if (is_string($videoUrl) && mb_trim($videoUrl) !== '' && ! $this->isValidUrl($videoUrl))
+        if (is_string($videoUrl)
+            && mb_trim($videoUrl) !== ''
+            && ! $this->isValidUrl($videoUrl)
+            && $sharePayload->option('media_type') !== 'REELS')
         {
             $temporary          = $this->makeTemporaryPublicUrlForLocalPath($videoUrl, 'Facebook video media');
             $videoUrl           = $temporary['url'];
