@@ -218,6 +218,7 @@ Shared share options:
   --link-title="Article title for LinkedIn link posts (optional)"
   --image-url="https://cdn.example.com/image.jpg"
   --video-url="https://cdn.example.com/video.mp4"
+  --video-title="Video title for Facebook or LinkedIn"
   --media-source="/path/to/file.jpg|https://example.com/file.jpg"
   --media-sources="/path/a.jpg,https://example.com/b.mp4"
   --media-type=image|video     Optional hint for media-source/media-sources
@@ -434,6 +435,11 @@ function applySharedOptions(FluentShare $fluent, array $options): FluentShare
     if (\array_key_exists('video-url', $options))
     {
         $fluent = $fluent->videoUrl($options['video-url']);
+    }
+
+    if (\array_key_exists('video-title', $options))
+    {
+        $fluent = $fluent->videoTitle(optionString($options, 'video-title'));
     }
 
     $mediaType = \array_key_exists('media-type', $options) ? optionString($options, 'media-type') : null;

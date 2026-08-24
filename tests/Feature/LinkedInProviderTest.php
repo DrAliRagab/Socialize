@@ -274,6 +274,25 @@ it('shares linkedin post with media urn only', function (): void {
     ;
 });
 
+it('sends linkedin video title separately from post commentary', function (): void {
+    Http::fake([
+        'https://api.linkedin.com/rest/posts' => Http::response(['id' => 'urn:li:share:video-title'], 201),
+    ]);
+
+    $shareResult = Socialize::linkedin()
+        ->message('Post commentary')
+        ->mediaUrn('urn:li:video:abc')
+        ->videoTitle('Separate video title')
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('urn:li:share:video-title');
+
+    Http::assertSent(fn (Request $request): bool => ($request->data()['commentary'] ?? null) === 'Post commentary'
+        && ($request->data()['content']['media']['id'] ?? null)                              === 'urn:li:video:abc'
+        && ($request->data()['content']['media']['title'] ?? null)                           === 'Separate video title');
+});
+
 it('auto uploads linkedin image media from URL and uses returned URN', function (): void {
     Http::fake(function (Request $request) {
         if ($request->url() === 'https://cdn.example.com/linkedin-image.jpg')

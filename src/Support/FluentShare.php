@@ -36,6 +36,7 @@ final class FluentShare
             'published',
             'scheduled_at',
             'targeting',
+            'video_title',
         ],
         'instagram' => [
             'alt_text',
@@ -53,6 +54,7 @@ final class FluentShare
             'distribution',
             'media_urn',
             'poll',
+            'video_title',
             'visibility',
         ],
     ];
@@ -121,6 +123,20 @@ final class FluentShare
         $this->videoUrl = $this->normalizeNullableString($videoUrl);
 
         return $this;
+    }
+
+    public function videoTitle(string $videoTitle): self
+    {
+        $this->ensureProvider(Provider::Facebook, Provider::LinkedIn);
+
+        $videoTitle = mb_trim($videoTitle);
+
+        if ($videoTitle === '')
+        {
+            throw new InvalidSharePayloadException('videoTitle cannot be empty.');
+        }
+
+        return $this->option('video_title', $videoTitle);
     }
 
     public function mediaId(string $mediaId): self

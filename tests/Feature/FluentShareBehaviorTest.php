@@ -12,6 +12,10 @@ it('rejects provider-specific method on wrong provider', function (): void {
     Socialize::twitter()->reel();
 })->throws(UnsupportedFeatureException::class, 'only available for [facebook, instagram]');
 
+it('limits video title to providers whose APIs expose it', function (): void {
+    Socialize::instagram()->videoTitle('Video title');
+})->throws(UnsupportedFeatureException::class, 'only available for [facebook, linkedin]');
+
 it('rejects targeting and carousel when provider does not support them', function (): void {
     expect(fn (): mixed => Socialize::twitter()->targeting(['geo_locations' => ['countries' => ['US']]]))
         ->toThrow(UnsupportedFeatureException::class, 'only available for [facebook]')
@@ -128,6 +132,10 @@ it('rejects empty provider-specific identifiers', function (): void {
 
     expect(fn (): mixed => Socialize::linkedin()->mediaUrn('   '))
         ->toThrow(InvalidSharePayloadException::class, 'LinkedIn media URN cannot be empty')
+    ;
+
+    expect(fn (): mixed => Socialize::facebook()->videoTitle('   '))
+        ->toThrow(InvalidSharePayloadException::class, 'videoTitle cannot be empty')
     ;
 });
 

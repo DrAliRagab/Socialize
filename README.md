@@ -101,6 +101,7 @@ foreach (['facebook', 'instagram', 'twitter', 'linkedin'] as $provider) {
 Facebook:
 
 - `reel()`
+- `videoTitle(string $title)`
 - `published(bool $published = true)`
 - `scheduledAt(string|int|DateTimeInterface $dateTime)`
 - `targeting(array $targeting)`
@@ -116,6 +117,7 @@ Facebook videos remain regular Page videos by default. Add `reel()` to use Meta'
 ```php
 Socialize::facebook()
     ->message('Reel caption')
+    ->videoTitle('Reel title')
     ->videoUrl('https://cdn.example.com/reel.mp4')
     ->reel()
     ->share();
@@ -132,7 +134,10 @@ LinkedIn:
 - `visibility(string $visibility)`
 - `distribution(string $distribution)`
 - `mediaUrn(string $mediaUrn)`
+- `videoTitle(string $title)`
 - `poll(array $options, int $durationMinutes)`
+
+Facebook and LinkedIn expose a video title separately from the post text. `message()` maps to Facebook `description` or LinkedIn `commentary`, while `videoTitle()` maps to Facebook `title` or LinkedIn `content.media.title`. Instagram and X do not expose a separate video title.
 
 Poll notes:
 
@@ -290,6 +295,7 @@ Examples:
 
 ```bash
 php bin/local-tester.php share --provider=facebook --message="Hello" --link="https://example.com"
+php bin/local-tester.php share --provider=facebook --message="Reel caption" --video-title="Reel title" --media-source="/absolute/path/reel.mp4" --media-type=video --reel --published=false
 php bin/local-tester.php comment --provider=facebook --post-id="123_456" --comment="Nice post!"
 php bin/local-tester.php share-and-comment --provider=linkedin --message="Launch" --link="https://example.com" --comment="Any feedback?"
 php bin/local-tester.php share --provider=instagram --video-url="https://cdn.example.com/reel.mp4" --reel
