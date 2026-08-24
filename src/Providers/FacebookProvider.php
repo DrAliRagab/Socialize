@@ -56,6 +56,18 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
         {
             [$resolvedImageUrl, $resolvedVideoUrl] = $this->resolveMediaUrls($sharePayload, $cleanupCallbacks);
 
+            if ($sharePayload->option('media_type') === 'REELS')
+            {
+                if ($resolvedVideoUrl === null)
+                {
+                    throw new InvalidSharePayloadException('Facebook reel publishing requires a video.');
+                }
+
+                $this->ensureUrl($resolvedVideoUrl, 'videoUrl');
+
+                return $this->publishReel($sharePayload, $resolvedVideoUrl, $pageId, $token, $version);
+            }
+
             if ($resolvedImageUrl !== null)
             {
                 $this->ensureUrl($resolvedImageUrl, 'imageUrl');
@@ -237,6 +249,101 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
                 ? $scheduledAt
                 : Carbon::parse($scheduledAt)->timestamp;
             $data['published'] = false;
+        }
+
+        $targeting = $sharePayload->option('targeting');
+
+        if (is_array($targeting) && $targeting !== [])
+        {
+            $data['targeting'] = $targeting;
+        }
+    }
+
+    private function publishReel(
+        SharePayload $sharePayload,
+        string $videoUrl,
+        string $pageId,
+        string $token,
+        string $version,
+    ): ShareResult {
+        $endpoint = sprintf('/%s/%s/video_reels', $version, $pageId);
+        $start    = $this->decode($this->send('POST', $endpoint, [
+            'access_token' => $token,
+            'upload_phase' => 'START',
+        ]));
+
+        $videoId = $start['video_id'] ?? null;
+
+        if (is_int($videoId))
+        {
+            $videoId = (string)$videoId;
+        }
+
+        if (! is_string($videoId) || $videoId === '')
+        {
+            throw ApiException::invalidResponse($this->provider(), 'Facebook API did not return a reel video id.');
+        }
+
+        $uploadUrl = $start['upload_url'] ?? null;
+
+        if (! is_string($uploadUrl) || filter_var($uploadUrl, FILTER_VALIDATE_URL) === false)
+        {
+            $uploadUrl = sprintf('https://rupload.facebook.com/video-upload/%s/%s', $version, $videoId);
+        }
+
+        $this->send('POST', $uploadUrl, null, [
+            'Authorization' => 'OAuth ' . $token,
+            'file_url'      => $videoUrl,
+        ]);
+
+        $finishData = [
+            'access_token' => $token,
+            'upload_phase' => 'FINISH',
+            'video_id'     => $videoId,
+        ];
+
+        $description = $this->buildCaption($sharePayload);
+
+        if ($description !== null)
+        {
+            $finishData['description'] = $description;
+        }
+
+        $this->applyReelPublishingOptions($sharePayload, $finishData);
+
+        $finish = $this->decode($this->send('POST', $endpoint, $finishData));
+
+        if (($finish['success'] ?? true) === false)
+        {
+            throw ApiException::invalidResponse($this->provider(), 'Facebook API did not publish the reel.');
+        }
+
+        return new ShareResult(
+            provider: $this->provider(),
+            id: $videoId,
+            url: sprintf('https://www.facebook.com/reel/%s', $videoId),
+            raw: $finish,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function applyReelPublishingOptions(SharePayload $sharePayload, array &$data): void
+    {
+        $scheduledAt = $sharePayload->option('scheduled_at');
+
+        if (is_int($scheduledAt) || is_string($scheduledAt))
+        {
+            $data['scheduled_publish_time'] = is_int($scheduledAt)
+                ? $scheduledAt
+                : Carbon::parse($scheduledAt)->timestamp;
+            $data['video_state'] = 'SCHEDULED';
+        } else
+        {
+            $data['video_state'] = $sharePayload->option('published') === false
+                ? 'DRAFT'
+                : 'PUBLISHED';
         }
 
         $targeting = $sharePayload->option('targeting');

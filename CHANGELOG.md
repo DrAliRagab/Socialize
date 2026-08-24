@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## Unreleased
 
+## 3.2.0 - 2026-08-24
+
+### Added
+
+- Facebook Page Reel publishing through Meta's dedicated create, hosted upload, and finish workflow via `reel()`.
+
 ## 3.1.0 - 2026-05-23
 
 ### Changed

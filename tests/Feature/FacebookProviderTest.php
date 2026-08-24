@@ -130,6 +130,135 @@ it('shares a facebook video post', function (): void {
     Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/videos'));
 });
 
+it('publishes a facebook reel through the dedicated reels workflow', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/12345/video_reels' => Http::sequence()
+            ->push([
+                'video_id'   => 'fb-reel-video',
+                'upload_url' => 'https://rupload.facebook.com/video-upload/v25.0/fb-reel-video',
+            ], 200)
+            ->push(['success' => true], 200),
+        'https://rupload.facebook.com/*' => Http::response(['success' => true], 200),
+    ]);
+
+    $shareResult = Socialize::facebook()
+        ->message('Reel caption')
+        ->videoUrl('https://cdn.example.com/reel.mp4')
+        ->reel()
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('fb-reel-video')
+        ->and($shareResult->url())->toBe('https://www.facebook.com/reel/fb-reel-video')
+    ;
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/12345/video_reels'
+        && ($request->data()['upload_phase'] ?? null)               === 'START'
+        && ($request->data()['access_token'] ?? null)               === 'fb-token');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://rupload.facebook.com/video-upload/v25.0/fb-reel-video'
+        && $request->method()                                       === 'POST'
+        && $request->hasHeader('Authorization', 'OAuth fb-token')
+        && $request->hasHeader('file_url', 'https://cdn.example.com/reel.mp4')
+        && $request->body() === '');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/12345/video_reels'
+        && ($request->data()['upload_phase'] ?? null)               === 'FINISH'
+        && ($request->data()['video_id'] ?? null)                   === 'fb-reel-video'
+        && ($request->data()['video_state'] ?? null)                === 'PUBLISHED'
+        && ($request->data()['description'] ?? null)                === 'Reel caption');
+});
+
+it('requires a video when publishing a facebook reel', function (): void {
+    Http::fake();
+
+    Socialize::facebook()
+        ->message('Missing video')
+        ->reel()
+        ->share()
+    ;
+})->throws(InvalidSharePayloadException::class, 'requires a video');
+
+it('schedules a targeted facebook reel and falls back to the documented upload endpoint', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/12345/video_reels' => Http::sequence()
+            ->push(['video_id' => 123456], 200)
+            ->push(['success' => true], 200),
+        'https://rupload.facebook.com/*' => Http::response(['success' => true], 200),
+    ]);
+
+    $shareResult = Socialize::facebook()
+        ->videoUrl('https://cdn.example.com/scheduled-reel.mp4')
+        ->reel()
+        ->option('scheduled_at', '2026-09-01 12:00:00')
+        ->targeting(['geo_locations' => ['countries' => ['SA']]])
+        ->share()
+    ;
+
+    expect($shareResult->id())->toBe('123456');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://rupload.facebook.com/video-upload/v25.0/123456'
+        && $request->hasHeader('file_url', 'https://cdn.example.com/scheduled-reel.mp4'));
+
+    Http::assertSent(fn (Request $request): bool => ($request->data()['upload_phase'] ?? null) === 'FINISH'
+        && ($request->data()['video_state'] ?? null)                                           === 'SCHEDULED'
+        && \is_int($request->data()['scheduled_publish_time'] ?? null)
+        && ($request->data()['targeting']['geo_locations']['countries'] ?? null) === ['SA']
+        && ! \array_key_exists('description', $request->data()));
+});
+
+it('publishes a facebook reel as a draft when published is false', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/12345/video_reels' => Http::sequence()
+            ->push([
+                'video_id'   => 'fb-draft-reel',
+                'upload_url' => 'https://rupload.facebook.com/video-upload/v25.0/fb-draft-reel',
+            ], 200)
+            ->push(['success' => true], 200),
+        'https://rupload.facebook.com/*' => Http::response(['success' => true], 200),
+    ]);
+
+    Socialize::facebook()
+        ->videoUrl('https://cdn.example.com/draft-reel.mp4')
+        ->reel()
+        ->published(false)
+        ->share()
+    ;
+
+    Http::assertSent(fn (Request $request): bool => ($request->data()['upload_phase'] ?? null) === 'FINISH'
+        && ($request->data()['video_state'] ?? null)                                           === 'DRAFT');
+});
+
+it('throws when facebook reel creation does not return a video id', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/*' => Http::response(['upload_url' => 'https://rupload.facebook.com/video-upload/v25.0/missing'], 200),
+    ]);
+
+    Socialize::facebook()
+        ->videoUrl('https://cdn.example.com/reel.mp4')
+        ->reel()
+        ->share()
+    ;
+})->throws(ApiException::class, 'did not return a reel video id');
+
+it('throws when facebook reports a logical reel publishing failure', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/12345/video_reels' => Http::sequence()
+            ->push([
+                'video_id'   => 'fb-failed-reel',
+                'upload_url' => 'https://rupload.facebook.com/video-upload/v25.0/fb-failed-reel',
+            ], 200)
+            ->push(['success' => false], 200),
+        'https://rupload.facebook.com/*' => Http::response(['success' => true], 200),
+    ]);
+
+    Socialize::facebook()
+        ->videoUrl('https://cdn.example.com/reel.mp4')
+        ->reel()
+        ->share()
+    ;
+})->throws(ApiException::class, 'did not publish the reel');
+
 it('applies scheduling and targeting options to facebook photo and video shares', function (): void {
     Http::fake([
         'https://graph.facebook.com/*' => Http::sequence()

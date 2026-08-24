@@ -230,6 +230,7 @@ Shared share options:
   --comment="Text for comment command or share-and-comment command"
 
 Facebook options:
+  --reel
   --published=true|false
   --scheduled-at="2026-03-01 12:00:00"
   --targeting-json='{"geo_locations":{"countries":["US"]}}'
@@ -527,6 +528,11 @@ function applyProviderSpecificOptions(FluentShare $fluent, string $provider, arr
 
     if (\in_array($provider, ['facebook', 'fb'], true))
     {
+        if (optionFlag($options, 'reel'))
+        {
+            $fluent = $fluent->reel();
+        }
+
         if (\array_key_exists('published', $options))
         {
             $fluent = $fluent->published(optionBool($options, 'published'));

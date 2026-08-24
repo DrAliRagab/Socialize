@@ -100,6 +100,7 @@ foreach (['facebook', 'instagram', 'twitter', 'linkedin'] as $provider) {
 
 Facebook:
 
+- `reel()`
 - `published(bool $published = true)`
 - `scheduledAt(string|int|DateTimeInterface $dateTime)`
 - `targeting(array $targeting)`
@@ -109,6 +110,16 @@ Instagram:
 - `carousel(array $imageUrls)`
 - `altText(string $text)`
 - `reel()`
+
+Facebook videos remain regular Page videos by default. Add `reel()` to use Meta's dedicated Reels publishing workflow:
+
+```php
+Socialize::facebook()
+    ->message('Reel caption')
+    ->videoUrl('https://cdn.example.com/reel.mp4')
+    ->reel()
+    ->share();
+```
 
 X / Twitter:
 

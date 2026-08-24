@@ -32,6 +32,7 @@ final class FluentShare
      */
     private const array PROVIDER_OPTION_KEYS = [
         'facebook' => [
+            'media_type',
             'published',
             'scheduled_at',
             'targeting',
@@ -269,7 +270,7 @@ final class FluentShare
 
     public function reel(): self
     {
-        $this->ensureProvider(Provider::Instagram);
+        $this->ensureProvider(Provider::Facebook, Provider::Instagram);
 
         return $this->option('media_type', 'REELS');
     }
