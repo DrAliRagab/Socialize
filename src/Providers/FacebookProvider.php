@@ -94,6 +94,13 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
                     'description'  => $this->buildCaption($sharePayload),
                 ];
 
+                $videoTitle = $this->videoTitle($sharePayload);
+
+                if ($videoTitle !== null)
+                {
+                    $data['title'] = $videoTitle;
+                }
+
                 $this->applyPublishingOptions($sharePayload, $data);
             } else
             {
@@ -328,6 +335,13 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
             $finishData['description'] = $description;
         }
 
+        $videoTitle = $this->videoTitle($sharePayload);
+
+        if ($videoTitle !== null)
+        {
+            $finishData['title'] = $videoTitle;
+        }
+
         $this->applyReelPublishingOptions($sharePayload, $finishData);
 
         $finish = $this->decode($this->send('POST', $endpoint, $finishData));
@@ -371,6 +385,18 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
         {
             $data['targeting'] = $targeting;
         }
+    }
+
+    private function videoTitle(SharePayload $sharePayload): ?string
+    {
+        $videoTitle = $sharePayload->option('video_title');
+
+        if (! is_string($videoTitle) || mb_trim($videoTitle) === '')
+        {
+            return null;
+        }
+
+        return mb_trim($videoTitle);
     }
 
     /**

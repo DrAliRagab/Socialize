@@ -123,6 +123,13 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
             $content['media'] = [
                 'id' => mb_trim($mediaUrn),
             ];
+
+            $videoTitle = $sharePayload->option('video_title');
+
+            if (is_string($videoTitle) && mb_trim($videoTitle) !== '')
+            {
+                $content['media']['title'] = mb_trim($videoTitle);
+            }
         }
 
         if ($content !== [])

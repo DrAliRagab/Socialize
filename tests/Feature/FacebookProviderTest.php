@@ -122,12 +122,15 @@ it('shares a facebook video post', function (): void {
     $shareResult = Socialize::facebook()
         ->message('Video post')
         ->videoUrl('https://cdn.example.com/video.mp4')
+        ->videoTitle('Separate video title')
         ->share()
     ;
 
     expect($shareResult->id())->toBe('fb-video');
 
-    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/videos'));
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/videos')
+        && ($request->data()['title'] ?? null)       === 'Separate video title'
+        && ($request->data()['description'] ?? null) === 'Video post');
 });
 
 it('publishes a facebook reel through the dedicated reels workflow', function (): void {
@@ -144,6 +147,7 @@ it('publishes a facebook reel through the dedicated reels workflow', function ()
     $shareResult = Socialize::facebook()
         ->message('Reel caption')
         ->videoUrl('https://cdn.example.com/reel.mp4')
+        ->videoTitle('Separate Reel title')
         ->reel()
         ->share()
     ;
@@ -166,6 +170,7 @@ it('publishes a facebook reel through the dedicated reels workflow', function ()
         && ($request->data()['upload_phase'] ?? null)               === 'FINISH'
         && ($request->data()['video_id'] ?? null)                   === 'fb-reel-video'
         && ($request->data()['video_state'] ?? null)                === 'PUBLISHED'
+        && ($request->data()['title'] ?? null)                      === 'Separate Reel title'
         && ($request->data()['description'] ?? null)                === 'Reel caption');
 });
 

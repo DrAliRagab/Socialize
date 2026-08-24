@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## Unreleased
 
+## 3.4.0 - 2026-08-25
+
+### Added
+
+- Add `videoTitle()` for separate Facebook video/Reel titles and LinkedIn video media titles.
+
 ## 3.3.0 - 2026-08-25
 
 ### Changed
