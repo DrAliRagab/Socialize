@@ -9,8 +9,8 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 it('rejects provider-specific method on wrong provider', function (): void {
-    Socialize::facebook()->reel();
-})->throws(UnsupportedFeatureException::class, 'only available for [instagram]');
+    Socialize::twitter()->reel();
+})->throws(UnsupportedFeatureException::class, 'only available for [facebook, instagram]');
 
 it('rejects targeting and carousel when provider does not support them', function (): void {
     expect(fn (): mixed => Socialize::twitter()->targeting(['geo_locations' => ['countries' => ['US']]]))

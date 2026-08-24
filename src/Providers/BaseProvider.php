@@ -95,10 +95,10 @@ abstract class BaseProvider
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param array<string, mixed>|null $data
      * @param array<string, string> $headers
      */
-    protected function send(string $method, string $path, array $data = [], array $headers = []): Response
+    protected function send(string $method, string $path, ?array $data = [], array $headers = []): Response
     {
         $method         = mb_strtoupper($method);
         $pendingRequest = $this->pendingRequest($headers);
@@ -108,10 +108,10 @@ abstract class BaseProvider
             $response = match ($method)
             {
                 'GET'    => $pendingRequest->get($path, $data),
-                'POST'   => $pendingRequest->post($path, $data),
-                'DELETE' => $pendingRequest->delete($path, $data),
-                'PUT'    => $pendingRequest->put($path, $data),
-                'PATCH'  => $pendingRequest->patch($path, $data),
+                'POST'   => $data === null ? $pendingRequest->send('POST', $path) : $pendingRequest->post($path, $data),
+                'DELETE' => $pendingRequest->delete($path, $data ?? []),
+                'PUT'    => $pendingRequest->put($path, $data ?? []),
+                'PATCH'  => $pendingRequest->patch($path, $data ?? []),
                 default  => throw new InvalidArgumentException(sprintf('Unsupported HTTP method [%s].', $method)),
             };
         } catch (Exception $exception)
