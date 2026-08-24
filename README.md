@@ -144,13 +144,21 @@ Poll notes:
 
 Socialize keeps the API fluent and provider-agnostic:
 
-- If a provider expects a URL (for example Facebook/Instagram) and you pass a local file, Socialize stores a temporary public file URL, uses it, then cleans it up.
+- Local Facebook Reels and local Instagram videos, Reels, Stories, and carousel videos are uploaded directly from disk through Meta's resumable upload endpoints.
+- Media types that still use URL-based publishing, including Instagram images and regular Facebook Page photos/videos, are exposed through a temporary public URL and cleaned up afterward.
 - If a provider expects uploaded media IDs/URNs (for example X/LinkedIn) and you pass a URL, Socialize downloads and uploads it automatically.
 
 Examples:
 
 ```php
-// Local image -> temporary URL flow for URL-based providers
+// Local Facebook Reel -> direct binary upload
+Socialize::provider('facebook')
+    ->media('/absolute/path/reel.mp4', 'video')
+    ->message('Local Reel')
+    ->reel()
+    ->share();
+
+// Local image -> temporary URL flow where Meta still requires a URL
 Socialize::provider('facebook')
     ->media('/absolute/path/banner.jpg', 'image')
     ->message('Local image test')

@@ -346,7 +346,7 @@ it('shares instagram video from fluent media source', function (): void {
         && ($request->data()['video_url'] ?? null)                  === 'https://cdn.example.com/from-media.mp4');
 });
 
-it('shares instagram video from local path in videoUrl through temporary URL', function (): void {
+it('uploads instagram video from a local path through the resumable upload flow', function (): void {
     Storage::fake('public');
 
     $tempFile = tempnam(sys_get_temp_dir(), 'socialize-ig-video-');
@@ -361,9 +361,13 @@ it('shares instagram video from local path in videoUrl through temporary URL', f
     file_put_contents($videoPath, 'video-bytes');
 
     Http::fake([
-        'https://graph.facebook.com/v25.0/98765/media'            => Http::response(['id' => 'container-local-video'], 200),
-        'https://graph.facebook.com/v25.0/container-local-video*' => Http::response(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
-        'https://graph.facebook.com/v25.0/98765/media_publish'    => Http::response(['id' => 'ig-local-video'], 200),
+        'https://graph.facebook.com/v25.0/98765/media' => Http::response([
+            'id'  => 'container-local-video',
+            'uri' => 'https://rupload.facebook.com/ig-api-upload/v25.0/container-local-video',
+        ], 200),
+        'https://rupload.facebook.com/ig-api-upload/v25.0/container-local-video' => Http::response(['success' => true], 200),
+        'https://graph.facebook.com/v25.0/container-local-video*'                => Http::response(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish'                   => Http::response(['id' => 'ig-local-video'], 200),
     ]);
 
     try
@@ -380,7 +384,131 @@ it('shares instagram video from local path in videoUrl through temporary URL', f
     }
 
     Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/98765/media'
-        && str_contains((string)($request->data()['video_url'] ?? ''), '/storage/socialize-temp/'));
+        && ($request->data()['upload_type'] ?? null)                === 'resumable'
+        && ($request->data()['media_type'] ?? null)                 === 'REELS'
+        && ! \array_key_exists('video_url', $request->data()));
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://rupload.facebook.com/ig-api-upload/v25.0/container-local-video'
+        && $request->hasHeader('Authorization', 'OAuth ig-token')
+        && $request->hasHeader('offset', '0')
+        && $request->hasHeader('file_size', (string)\strlen('video-bytes'))
+        && $request->hasHeader('Content-Type', 'application/octet-stream'));
+
+    expect(Storage::disk('public')->allFiles('socialize-temp'))->toBe([]);
+});
+
+it('throws when instagram does not return a resumable upload uri', function (): void {
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-ig-video-uri-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for instagram missing upload URI test.');
+    }
+
+    file_put_contents($tempFile, 'video-bytes');
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media' => Http::response(['id' => 'container-without-uri'], 200),
+    ]);
+
+    try
+    {
+        expect(fn () => Socialize::instagram()->videoUrl($tempFile)->share())
+            ->toThrow(ApiException::class, 'Instagram API did not return a resumable upload URI.')
+        ;
+    } finally
+    {
+        @unlink($tempFile);
+    }
+});
+
+it('throws when instagram rejects a local video upload', function (): void {
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-ig-video-failed-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for instagram failed video upload test.');
+    }
+
+    file_put_contents($tempFile, 'failed-video-bytes');
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media' => Http::response([
+            'id'  => 'container-failed-upload',
+            'uri' => 'https://rupload.facebook.com/ig-api-upload/v25.0/container-failed-upload',
+        ], 200),
+        'https://rupload.facebook.com/ig-api-upload/v25.0/container-failed-upload' => Http::response(['success' => false], 200),
+    ]);
+
+    try
+    {
+        expect(fn () => Socialize::instagram()->videoUrl($tempFile)->share())
+            ->toThrow(ApiException::class, 'Instagram API did not upload local video for container [container-failed-upload].')
+        ;
+    } finally
+    {
+        @unlink($tempFile);
+    }
+
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/media_publish'));
+});
+
+it('uploads a local instagram carousel video through a resumable child container', function (): void {
+    Storage::fake('public');
+
+    $tempFile = tempnam(sys_get_temp_dir(), 'socialize-ig-carousel-video-');
+
+    if (! \is_string($tempFile))
+    {
+        throw new RuntimeException('Failed to create temporary file for instagram local carousel video test.');
+    }
+
+    $videoPath = $tempFile . '.mp4';
+    rename($tempFile, $videoPath);
+    file_put_contents($videoPath, 'carousel-video-bytes');
+
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media' => Http::sequence()
+            ->push(['id' => 'child-carousel-image'], 200)
+            ->push([
+                'id'  => 'child-carousel-video',
+                'uri' => 'https://rupload.facebook.com/ig-api-upload/v25.0/child-carousel-video',
+            ], 200)
+            ->push(['id' => 'parent-carousel-local-video'], 200),
+        'https://rupload.facebook.com/ig-api-upload/v25.0/child-carousel-video' => Http::response(['success' => true], 200),
+        'https://graph.facebook.com/v25.0/parent-carousel-local-video*'         => Http::response(['status_code' => 'FINISHED', 'status' => 'READY'], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish'                  => Http::response(['id' => 'ig-carousel-local-video'], 200),
+    ]);
+
+    try
+    {
+        $shareResult = Socialize::instagram()
+            ->message('Local carousel video')
+            ->carousel([
+                'https://cdn.example.com/carousel-image.jpg',
+                ['source' => $videoPath, 'type' => 'video'],
+            ])
+            ->share()
+        ;
+
+        expect($shareResult->id())->toBe('ig-carousel-local-video');
+    } finally
+    {
+        @unlink($videoPath);
+    }
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v25.0/98765/media'
+        && ($request->data()['is_carousel_item'] ?? null)           === true
+        && ($request->data()['media_type'] ?? null)                 === 'VIDEO'
+        && ($request->data()['upload_type'] ?? null)                === 'resumable'
+        && ! \array_key_exists('video_url', $request->data()));
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://rupload.facebook.com/ig-api-upload/v25.0/child-carousel-video'
+        && $request->hasHeader('offset', '0')
+        && $request->hasHeader('file_size', (string)\strlen('carousel-video-bytes'))
+        && $request->hasHeader('Content-Type', 'application/octet-stream'));
+
+    expect(Storage::disk('public')->allFiles('socialize-temp'))->toBe([]);
 });
 
 it('throws when instagram carousel resolves to fewer than 2 media items', function (): void {

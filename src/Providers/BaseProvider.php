@@ -19,6 +19,7 @@ use function fclose;
 use function file_exists;
 use function file_get_contents;
 use function file_put_contents;
+use function filesize;
 
 use const FILTER_VALIDATE_URL;
 
@@ -168,6 +169,23 @@ abstract class BaseProvider
         return $response;
     }
 
+    protected function localMediaFileSize(string $filePath): int
+    {
+        if (! file_exists($filePath) || ! is_readable($filePath))
+        {
+            throw new InvalidSharePayloadException(sprintf('Media source path does not exist or is not readable [%s].', $filePath));
+        }
+
+        $fileSize = filesize($filePath);
+
+        if (! is_int($fileSize) || $fileSize < 1)
+        {
+            throw new InvalidSharePayloadException(sprintf('Media source [%s] is empty or unreadable.', $filePath));
+        }
+
+        return $fileSize;
+    }
+
     /**
      * @param array<string, string> $headers
      */
@@ -191,7 +209,9 @@ abstract class BaseProvider
 
         try
         {
-            $response = Http::withHeaders($headers)
+            $response = Http::withHeaders(array_merge([
+                'Content-Type' => $contentType,
+            ], $headers))
                 ->timeout($this->intConfig('timeout', 15))
                 ->connectTimeout($this->intConfig('connect_timeout', 10))
                 ->send($method, $url, [
