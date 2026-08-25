@@ -523,6 +523,18 @@ it('auto uploads linkedin video media from local file and finalizes upload', fun
         && ($request->data()['finalizeUploadRequest']['uploadToken'] ?? null)     === 'token-1'
         && ($request->data()['finalizeUploadRequest']['uploadedPartIds'] ?? null) === ['etag-1']);
 
+    Http::assertSent(function (Request $request) use ($size): bool {
+        $initializeUploadRequest = $request->data()['initializeUploadRequest'] ?? null;
+
+        return $request->url()          === 'https://api.linkedin.com/rest/videos?action=initializeUpload'
+            && $initializeUploadRequest === [
+                'owner'           => 'urn:li:person:123',
+                'fileSizeBytes'   => $size,
+                'uploadCaptions'  => false,
+                'uploadThumbnail' => false,
+            ];
+    });
+
     Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.linkedin.com/rest/posts'
         && ($request->data()['content']['media']['id'] ?? null)     === 'urn:li:video:auto-1');
 });

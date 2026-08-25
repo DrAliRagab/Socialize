@@ -522,7 +522,6 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
                     'fileSizeBytes'   => $size,
                     'uploadCaptions'  => false,
                     'uploadThumbnail' => false,
-                    'uploadSubtitles' => false,
                 ],
             ],
             $this->headers(),
