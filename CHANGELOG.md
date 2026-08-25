@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## Unreleased
 
+## 3.4.1 - 2026-08-25
+
+### Fixed
+
+- Remove the unsupported LinkedIn video initialization `uploadSubtitles` field that caused short video publication requests to fail with `FIELD_INVALID`.
+
 ## 3.4.0 - 2026-08-25
 
 ### Added
