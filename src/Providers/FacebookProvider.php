@@ -129,7 +129,13 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
 
             if (! is_string($id) || $id === '')
             {
-                throw ApiException::invalidResponse($this->provider(), 'Facebook API did not return a post id.');
+                throw ApiException::invalidResponse(
+                    $this->provider(),
+                    'Facebook API did not return a post id.',
+                    responseBody: $response,
+                    requestMethod: 'POST',
+                    requestUrl: $endpoint,
+                );
             }
 
             return new ShareResult(
@@ -197,7 +203,13 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
 
         if (! is_string($id) || $id === '')
         {
-            throw ApiException::invalidResponse($this->provider(), 'Facebook API did not return a comment id.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'Facebook API did not return a comment id.',
+                responseBody: $response,
+                requestMethod: 'POST',
+                requestUrl: $endpoint,
+            );
         }
 
         return new CommentResult(
@@ -291,7 +303,13 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
 
         if (! is_string($videoId) || $videoId === '')
         {
-            throw ApiException::invalidResponse($this->provider(), 'Facebook API did not return a reel video id.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'Facebook API did not return a reel video id.',
+                responseBody: $start,
+                requestMethod: 'POST',
+                requestUrl: $endpoint,
+            );
         }
 
         $uploadUrl = $start['upload_url'] ?? null;
@@ -319,7 +337,13 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
 
         if (($upload['success'] ?? true) === false)
         {
-            throw ApiException::invalidResponse($this->provider(), 'Facebook API did not upload the reel video.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'Facebook API did not upload the reel video.',
+                responseBody: $upload,
+                requestMethod: 'POST',
+                requestUrl: $uploadUrl,
+            );
         }
 
         $finishData = [
@@ -348,7 +372,13 @@ final class FacebookProvider extends BaseProvider implements ProviderDriver
 
         if (($finish['success'] ?? true) === false)
         {
-            throw ApiException::invalidResponse($this->provider(), 'Facebook API did not publish the reel.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'Facebook API did not publish the reel.',
+                responseBody: $finish,
+                requestMethod: 'POST',
+                requestUrl: $endpoint,
+            );
         }
 
         return new ShareResult(

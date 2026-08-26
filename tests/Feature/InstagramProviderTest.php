@@ -703,6 +703,54 @@ it('throws immediately for instagram publish errors that are not retryable not-r
     Socialize::instagram()->imageUrl('https://cdn.example.com/plain-error.jpg')->share();
 })->throws(ApiException::class, 'status 500');
 
+it('reports instagram processing failure diagnostics and the failed publish endpoint', function (): void {
+    Http::fake([
+        'https://graph.facebook.com/v25.0/98765/media'                  => Http::response(['id' => 'container-processing-failed'], 200),
+        'https://graph.facebook.com/v25.0/container-processing-failed*' => Http::response([
+            'status_code' => 'FINISHED',
+            'status'      => 'READY',
+        ], 200),
+        'https://graph.facebook.com/v25.0/98765/media_publish' => Http::response([
+            'debug_info' => [
+                'retriable' => false,
+                'type'      => 'ProcessingFailedError',
+                'message'   => 'Request processing failed',
+            ],
+        ], 400),
+    ]);
+
+    try
+    {
+        Socialize::instagram()
+            ->videoUrl('https://cdn.example.com/processing-failed.mp4')
+            ->share()
+        ;
+    } catch (ApiException $apiException)
+    {
+        expect($apiException->getMessage())
+            ->toContain('status 400 for POST /v25.0/98765/media_publish')
+            ->toContain('Request processing failed')
+            ->toContain('type=ProcessingFailedError')
+            ->toContain('retriable=false')
+            ->and($apiException->context()['request'])->toBe([
+                'method' => 'POST',
+                'url'    => '/v25.0/98765/media_publish',
+            ])
+            ->and($apiException->context()['provider_response'])->toBe([
+                'debug_info' => [
+                    'retriable' => false,
+                    'type'      => 'ProcessingFailedError',
+                    'message'   => 'Request processing failed',
+                ],
+            ])
+        ;
+
+        return;
+    }
+
+    throw new RuntimeException('Expected ApiException was not thrown.');
+});
+
 it('throws on final instagram not-ready publish attempt when retries are exhausted', function (): void {
     config()->set('socialize.providers.instagram.publish_retry_attempts', 1);
     config()->set('socialize.providers.instagram.publish_retry_sleep_seconds', 0);

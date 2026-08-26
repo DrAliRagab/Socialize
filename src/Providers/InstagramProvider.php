@@ -86,6 +86,9 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
                 throw ApiException::invalidResponse(
                     $this->provider(),
                     sprintf('Instagram API did not return a media id after publishing.%s', $statusDetail),
+                    responseBody: $publishResponse,
+                    requestMethod: 'POST',
+                    requestUrl: sprintf('/%s/%s/media_publish', $version, $igId),
                 );
             }
 
@@ -157,7 +160,13 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
 
         if (! is_string($id) || $id === '')
         {
-            throw ApiException::invalidResponse($this->provider(), 'Instagram API did not return a comment id.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'Instagram API did not return a comment id.',
+                responseBody: $response,
+                requestMethod: 'POST',
+                requestUrl: sprintf('/%s/%s/comments', $this->graphVersion(), $postId),
+            );
         }
 
         return new CommentResult(
@@ -229,7 +238,13 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
 
         if (! is_string($creationId) || $creationId === '')
         {
-            throw ApiException::invalidResponse($this->provider(), 'Instagram API did not return a container id.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'Instagram API did not return a container id.',
+                responseBody: $container,
+                requestMethod: 'POST',
+                requestUrl: sprintf('/%s/%s/media', $version, $igId),
+            );
         }
 
         if (is_string($localVideoPath))
@@ -280,7 +295,13 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
 
             if (! is_string($childId) || $childId === '')
             {
-                throw ApiException::invalidResponse($this->provider(), 'Instagram API did not return a child container id for carousel post.');
+                throw ApiException::invalidResponse(
+                    $this->provider(),
+                    'Instagram API did not return a child container id for carousel post.',
+                    responseBody: $child,
+                    requestMethod: 'POST',
+                    requestUrl: sprintf('/%s/%s/media', $version, $igId),
+                );
             }
 
             if (is_int($localVideoFileSize))
@@ -302,7 +323,13 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
 
         if (! is_string($creationId) || $creationId === '')
         {
-            throw ApiException::invalidResponse($this->provider(), 'Instagram API did not return a parent carousel container id.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'Instagram API did not return a parent carousel container id.',
+                responseBody: $parent,
+                requestMethod: 'POST',
+                requestUrl: sprintf('/%s/%s/media', $version, $igId),
+            );
         }
 
         return $creationId;
@@ -335,7 +362,11 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
 
         if (! is_string($uploadUri) || ! $this->isValidUrl($uploadUri))
         {
-            throw ApiException::invalidResponse($this->provider(), 'Instagram API did not return a resumable upload URI.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'Instagram API did not return a resumable upload URI.',
+                responseBody: $container,
+            );
         }
 
         $upload = $this->decode($this->sendBinaryFile('POST', $uploadUri, $videoPath, 'application/octet-stream', [
@@ -349,6 +380,9 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
             throw ApiException::invalidResponse(
                 $this->provider(),
                 sprintf('Instagram API did not upload local video for container [%s].', $creationId),
+                responseBody: $upload,
+                requestMethod: 'POST',
+                requestUrl: $uploadUri,
             );
         }
     }
@@ -506,10 +540,12 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
     {
         $maxAttempts  = $this->publishRetryAttempts();
         $sleepSeconds = $this->publishRetrySleepSeconds();
+        $lastStatus   = [];
 
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++)
         {
             $status     = $this->fetchContainerStatus($creationId, $accessToken, $version);
+            $lastStatus = $status;
             $statusCode = $status['status_code'] ?? null;
             $rawStatus  = $status['status']      ?? null;
 
@@ -531,6 +567,9 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
                             $statusCode,
                             is_string($rawStatus) && mb_trim($rawStatus) !== '' ? sprintf(', status=%s', $rawStatus) : '',
                         ),
+                        responseBody: $status,
+                        requestMethod: 'GET',
+                        requestUrl: sprintf('/%s/%s', $version, $creationId),
                     );
                 }
             }
@@ -551,6 +590,9 @@ final class InstagramProvider extends BaseProvider implements ProviderDriver
         throw ApiException::invalidResponse(
             $this->provider(),
             sprintf('Instagram media container was not ready after %d attempt(s).', $maxAttempts),
+            responseBody: $lastStatus,
+            requestMethod: 'GET',
+            requestUrl: sprintf('/%s/%s', $version, $creationId),
         );
     }
 

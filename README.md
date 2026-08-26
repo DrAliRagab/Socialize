@@ -207,9 +207,16 @@ try {
 } catch (ApiException $e) {
     $provider = $e->provider()->value;
     $status = $e->status();
-    $response = $e->responseBody();
+    $method = $e->requestMethod();
+    $url = $e->requestUrl();
+    $response = $e->responseBody();       // Parsed JSON, when available
+    $responseText = $e->responseText();   // Bounded plain-text fallback
+    $responseHeaders = $e->responseHeaders();
+    $logContext = $e->context();           // Redacted, structured diagnostics
 }
 ```
+
+`ApiException` messages include common provider details such as nested debug messages, error type, code/subcode, status, retryability, and trace ID when supplied by the provider. Laravel automatically adds the exception's `context()` data when reporting it. The context includes the failed request method/URL, provider response, and selected diagnostic response headers; token, secret, authorization, signature, and cookie fields are redacted. `responseBody()` remains the unmodified provider JSON for callers that explicitly need it, so do not expose it publicly without applying your own redaction policy.
 
 ## Model Trait
 

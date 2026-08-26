@@ -121,12 +121,14 @@ abstract class BaseProvider
                 $this->provider(),
                 sprintf('%s request failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
                 throwable: $exception,
+                requestMethod: $method,
+                requestUrl: $path,
             );
         }
 
         if ($response->failed())
         {
-            throw ApiException::fromResponse($this->provider(), $response);
+            throw ApiException::fromResponse($this->provider(), $response, $method, $path);
         }
 
         return $response;
@@ -158,12 +160,14 @@ abstract class BaseProvider
                 $this->provider(),
                 sprintf('%s request failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
                 throwable: $exception,
+                requestMethod: $method,
+                requestUrl: $url,
             );
         }
 
         if ($response->failed())
         {
-            throw ApiException::fromResponse($this->provider(), $response);
+            throw ApiException::fromResponse($this->provider(), $response, $method, $url);
         }
 
         return $response;
@@ -224,6 +228,8 @@ abstract class BaseProvider
                 $this->provider(),
                 sprintf('%s request failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
                 throwable: $exception,
+                requestMethod: $method,
+                requestUrl: $url,
             );
         } finally
         {
@@ -232,7 +238,7 @@ abstract class BaseProvider
 
         if ($response->failed())
         {
-            throw ApiException::fromResponse($this->provider(), $response);
+            throw ApiException::fromResponse($this->provider(), $response, $method, $url);
         }
 
         return $response;
@@ -302,12 +308,14 @@ abstract class BaseProvider
                 $this->provider(),
                 sprintf('%s request failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
                 throwable: $exception,
+                requestMethod: $method,
+                requestUrl: $url,
             );
         }
 
         if ($response->failed())
         {
-            throw ApiException::fromResponse($this->provider(), $response);
+            throw ApiException::fromResponse($this->provider(), $response, $method, $url);
         }
 
         return $response;
@@ -565,12 +573,14 @@ abstract class BaseProvider
                     $this->provider(),
                     sprintf('%s media download failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
                     throwable: $exception,
+                    requestMethod: 'GET',
+                    requestUrl: $source,
                 );
             }
 
             if ($response->failed())
             {
-                throw ApiException::fromResponse($this->provider(), $response);
+                throw ApiException::fromResponse($this->provider(), $response, 'GET', $source);
             }
 
             $contents = $response->body();
@@ -689,6 +699,8 @@ abstract class BaseProvider
                 $this->provider(),
                 sprintf('%s media download failed before receiving a valid response: %s', $this->providerName(), $exception->getMessage()),
                 throwable: $exception,
+                requestMethod: 'GET',
+                requestUrl: $source,
             );
         }
 
@@ -696,7 +708,7 @@ abstract class BaseProvider
         {
             @unlink($temporaryPath);
 
-            throw ApiException::fromResponse($this->provider(), $response);
+            throw ApiException::fromResponse($this->provider(), $response, 'GET', $source);
         }
 
         $downloadedSize = filesize($temporaryPath);
