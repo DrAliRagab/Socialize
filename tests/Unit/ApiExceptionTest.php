@@ -162,3 +162,151 @@ it('falls back to title entry in errors array when message and detail are missin
 
     expect($apiException->getMessage())->toContain('Entry title fallback');
 });
+
+it('extracts nested provider diagnostics and exposes redacted Laravel log context', function (): void {
+    $json = json_encode([
+        'debug_info' => [
+            'retriable' => false,
+            'type'      => 'ProcessingFailedError',
+            'message'   => 'Request processing failed',
+        ],
+        'access_token' => 'provider-secret',
+        'nested'       => [
+            'uploadToken' => 'upload-secret',
+            'safe'        => 'visible',
+        ],
+    ]);
+    $body = \is_string($json) ? $json : '{}';
+
+    $response = new Response(new Psr7Response(400, [
+        'Content-Type' => 'application/json',
+        'X-FB-Debug'   => 'meta-debug-id',
+        'Set-Cookie'   => 'session=secret',
+    ], $body));
+
+    $apiException = ApiException::fromResponse(
+        Provider::Instagram,
+        $response,
+        'post',
+        '/v25.0/123/media_publish?action=publish&access_token=request-secret',
+    );
+
+    expect($apiException->getMessage())
+        ->toContain('status 400 for POST /v25.0/123/media_publish?action=publish&access_token=[REDACTED]')
+        ->toContain('Request processing failed')
+        ->toContain('type=ProcessingFailedError')
+        ->toContain('retriable=false')
+        ->and($apiException->requestMethod())->toBe('POST')
+        ->and($apiException->requestUrl())->toBe('/v25.0/123/media_publish?action=publish&access_token=[REDACTED]')
+        ->and($apiException->responseText())->toBeNull()
+        ->and($apiException->responseHeaders())->toBe([
+            'Content-Type' => 'application/json',
+            'X-FB-Debug'   => 'meta-debug-id',
+        ])
+        ->and($apiException->context())->toBe([
+            'provider' => 'instagram',
+            'status'   => 400,
+            'request'  => [
+                'method' => 'POST',
+                'url'    => '/v25.0/123/media_publish?action=publish&access_token=[REDACTED]',
+            ],
+            'provider_response' => [
+                'debug_info' => [
+                    'retriable' => false,
+                    'type'      => 'ProcessingFailedError',
+                    'message'   => 'Request processing failed',
+                ],
+                'access_token' => '[REDACTED]',
+                'nested'       => [
+                    'uploadToken' => '[REDACTED]',
+                    'safe'        => 'visible',
+                ],
+            ],
+            'provider_response_headers' => [
+                'Content-Type' => 'application/json',
+                'X-FB-Debug'   => 'meta-debug-id',
+            ],
+        ])
+    ;
+});
+
+it('preserves bounded plain text provider errors', function (): void {
+    $response = new Response(new Psr7Response(
+        502,
+        ['Content-Type' => 'text/html', 'Retry-After' => '30'],
+        '<html><body>Gateway failure ' . str_repeat('x', 2_100) . '</body></html>',
+    ));
+
+    $apiException = ApiException::fromResponse(Provider::LinkedIn, $response);
+
+    expect($apiException->responseBody())->toBe([])
+        ->and($apiException->responseText())->toStartWith('Gateway failure')
+        ->and($apiException->responseText())->toEndWith('...')
+        ->and(mb_strlen((string)$apiException->responseText()))->toBe(2_003)
+        ->and($apiException->getMessage())->toContain('Gateway failure')
+        ->and($apiException->context()['provider_response'])->toBe($apiException->responseText())
+        ->and($apiException->context()['provider_response_headers'])->toBe([
+            'Content-Type' => 'text/html',
+            'Retry-After'  => '30',
+        ])
+    ;
+});
+
+it('includes common provider codes statuses and trace ids in the exception message', function (): void {
+    $json = json_encode([
+        'error' => [
+            'message'       => 'Media is not ready',
+            'type'          => 'OAuthException',
+            'code'          => 9007,
+            'error_subcode' => 2207027,
+            'is_transient'  => true,
+            'fbtrace_id'    => 'trace-123',
+        ],
+        'status_code' => 'IN_PROGRESS',
+        'status'      => 'Processing',
+    ]);
+    $body     = \is_string($json) ? $json : '{}';
+    $response = new Response(new Psr7Response(400, [], $body));
+
+    $apiException = ApiException::fromResponse(Provider::Instagram, $response);
+
+    expect($apiException->getMessage())->toContain('type=OAuthException')
+        ->toContain('code=9007')
+        ->toContain('subcode=2207027')
+        ->toContain('status_code=IN_PROGRESS')
+        ->toContain('status=Processing')
+        ->toContain('retriable=true')
+        ->toContain('trace_id=trace-123')
+    ;
+});
+
+it('adds request metadata to transport and payload exceptions', function (): void {
+    $apiException = ApiException::invalidResponse(
+        Provider::Twitter,
+        'Connection failed',
+        throwable: new RuntimeException('timeout'),
+        requestMethod: 'get',
+        requestUrl: 'https://api.example.com/items?api_key=secret',
+    );
+
+    $payload = ApiException::fromPayload(
+        Provider::Instagram,
+        422,
+        'Container failed',
+        ['status_code' => 'ERROR'],
+        requestMethod: 'GET',
+        requestUrl: '/container-1',
+    );
+
+    expect($apiException->context())->toBe([
+        'provider' => 'twitter',
+        'status'   => 500,
+        'request'  => [
+            'method' => 'GET',
+            'url'    => 'https://api.example.com/items?api_key=[REDACTED]',
+        ],
+    ])->and($payload->getMessage())->toContain('for GET /container-1')
+        ->toContain('status_code=ERROR')
+        ->and($payload->context()['provider_response'])->toBe(['status_code' => 'ERROR'])
+    ;
+});

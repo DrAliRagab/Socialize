@@ -144,7 +144,13 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
 
         if (! is_string($id) || $id === '')
         {
-            throw ApiException::invalidResponse($this->provider(), 'LinkedIn API did not return a post id.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'LinkedIn API did not return a post id.',
+                responseBody: $body,
+                requestMethod: 'POST',
+                requestUrl: '/rest/posts',
+            );
         }
 
         return new ShareResult(
@@ -214,7 +220,13 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
 
         if (! is_string($id) || $id === '')
         {
-            throw ApiException::invalidResponse($this->provider(), 'LinkedIn API did not return a comment id.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'LinkedIn API did not return a comment id.',
+                responseBody: $body,
+                requestMethod: 'POST',
+                requestUrl: sprintf('/v2/socialActions/%s/comments', rawurlencode($postId)),
+            );
         }
 
         return new CommentResult(
@@ -491,7 +503,13 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
 
         if (! is_array($value))
         {
-            throw ApiException::invalidResponse($this->provider(), 'LinkedIn image initialize response is invalid.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'LinkedIn image initialize response is invalid.',
+                responseBody: $initResponse,
+                requestMethod: 'POST',
+                requestUrl: '/rest/images?action=initializeUpload',
+            );
         }
 
         $uploadUrl = $value['uploadUrl'] ?? null;
@@ -499,7 +517,13 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
 
         if (! is_string($uploadUrl) || mb_trim($uploadUrl) === '' || ! is_string($imageUrn) || mb_trim($imageUrn) === '')
         {
-            throw ApiException::invalidResponse($this->provider(), 'LinkedIn image initialize response missing upload URL or image URN.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'LinkedIn image initialize response missing upload URL or image URN.',
+                responseBody: $initResponse,
+                requestMethod: 'POST',
+                requestUrl: '/rest/images?action=initializeUpload',
+            );
         }
 
         $this->uploadToLinkedInAssetUrl(
@@ -531,7 +555,13 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
 
         if (! is_array($value))
         {
-            throw ApiException::invalidResponse($this->provider(), 'LinkedIn video initialize response is invalid.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'LinkedIn video initialize response is invalid.',
+                responseBody: $initResponse,
+                requestMethod: 'POST',
+                requestUrl: '/rest/videos?action=initializeUpload',
+            );
         }
 
         $videoUrn    = $value['video']       ?? null;
@@ -539,7 +569,13 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
 
         if (! is_string($videoUrn) || mb_trim($videoUrn) === '')
         {
-            throw ApiException::invalidResponse($this->provider(), 'LinkedIn video initialize response missing video URN.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'LinkedIn video initialize response missing video URN.',
+                responseBody: $initResponse,
+                requestMethod: 'POST',
+                requestUrl: '/rest/videos?action=initializeUpload',
+            );
         }
 
         if (! is_string($uploadToken))
@@ -619,6 +655,9 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
                 throw ApiException::invalidResponse(
                     $this->provider(),
                     'LinkedIn video initialize response missing upload instructions.',
+                    responseBody: $initResponse,
+                    requestMethod: 'POST',
+                    requestUrl: '/rest/videos?action=initializeUpload',
                 );
             }
 
@@ -847,6 +886,9 @@ final class LinkedInProvider extends BaseProvider implements ProviderDriver
                 throw ApiException::invalidResponse(
                     $this->provider(),
                     sprintf('LinkedIn video processing failed for [%s]: %s', $videoUrn, is_string($reason) ? $reason : 'unknown reason'),
+                    responseBody: $videoStatus,
+                    requestMethod: 'GET',
+                    requestUrl: sprintf('/rest/videos/%s', rawurlencode($videoUrn)),
                 );
             }
 

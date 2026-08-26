@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## Unreleased
 
+## 3.5.0 - 2026-08-26
+
+### Added
+
+- Add detailed `ApiException` diagnostics for every HTTP helper, including the failed request method/URL, nested provider error metadata, bounded plain-text responses, selected trace/rate-limit headers, and Laravel exception log context with credential redaction.
+- Preserve provider response payloads and request context when a successful HTTP response is missing an expected post, comment, media, container, or upload identifier.
+
 ## 3.4.1 - 2026-08-25
 
 ### Fixed

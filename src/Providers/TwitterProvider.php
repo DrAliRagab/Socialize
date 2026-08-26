@@ -101,7 +101,13 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
 
         if (! is_string($id) || $id === '')
         {
-            throw ApiException::invalidResponse($this->provider(), 'X API did not return a post id.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'X API did not return a post id.',
+                responseBody: $response,
+                requestMethod: 'POST',
+                requestUrl: '/2/tweets',
+            );
         }
 
         return new ShareResult(
@@ -157,7 +163,13 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
 
         if (! is_string($id) || $id === '')
         {
-            throw ApiException::invalidResponse($this->provider(), 'X API did not return a comment id.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'X API did not return a comment id.',
+                responseBody: $response,
+                requestMethod: 'POST',
+                requestUrl: '/2/tweets',
+            );
         }
 
         return new CommentResult(
@@ -347,7 +359,13 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
 
         if (! is_string($mediaId) || $mediaId === '')
         {
-            throw ApiException::invalidResponse($this->provider(), 'X image upload did not return a media id.');
+            throw ApiException::invalidResponse(
+                $this->provider(),
+                'X image upload did not return a media id.',
+                responseBody: $response,
+                requestMethod: 'POST',
+                requestUrl: '/2/media/upload',
+            );
         }
 
         return $mediaId;
@@ -489,6 +507,7 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
                 throw ApiException::invalidResponse(
                     $this->provider(),
                     sprintf('X media processing failed for media id [%s]: %s', $mediaId, $error),
+                    responseBody: $processing,
                 );
             }
 
@@ -537,6 +556,7 @@ final class TwitterProvider extends BaseProvider implements ProviderDriver
         throw ApiException::invalidResponse(
             $this->provider(),
             sprintf('X media processing timed out for media id [%s] after %d attempt(s).', $mediaId, $maxAttempts),
+            responseBody: $processing,
         );
     }
 
